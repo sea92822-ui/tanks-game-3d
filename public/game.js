@@ -1144,34 +1144,38 @@ function emitExhaust(players, dt) {
     if (moving && !wasMoving) {
       for (let i = 0; i < 3; i++) spawnExhaustPuff(p, i * 90);
     }
-    if (!moving) return;
 
+    // в движении дымит гуще и чаще
+    let interval = moving ? 0.18 : 0.65;
     let t = playerExhaustTimers.get(p.id) || 0;
     t -= dt;
     if (t > 0) { playerExhaustTimers.set(p.id, t); return; }
-    playerExhaustTimers.set(p.id, 0.18);
-    spawnExhaustPuff(p, 0);
+    playerExhaustTimers.set(p.id, interval);
+    spawnExhaustPuff(p, 0, moving);
   });
 }
 
-function spawnExhaustPuff(p, delayMs) {
+function spawnExhaustPuff(p, delayMs, moving) {
   const a = p.chassisAngle;
   const rx = -Math.sin(a);
   const rz = -Math.cos(a);
   for (const side of [-1, 1]) {
-    const tx = p.x + rx * 22 + Math.cos(a) * side * 10;
-    const tz = p.z + rz * 22 - Math.sin(a) * side * 10;
+    // дым из выхлопных труб на корме (модель: x=±6, y=9, z=-20.5)
+    const tx = p.x + rx * 20.5 + Math.cos(a) * side * 6;
+    const tz = p.z + rz * 20.5 - Math.sin(a) * side * 6;
     const mat = new THREE.MeshBasicMaterial({ color: 0x9c9c9c, transparent: true });
     const mesh = new THREE.Mesh(particleGeo, mat);
-    mesh.scale.setScalar(2 + Math.random() * 2);
-    mesh.position.set(tx, 4, tz);
+    const size = moving ? 2.5 + Math.random() * 2 : 1.8 + Math.random() * 1.4;
+    mesh.scale.setScalar(size);
+    mesh.position.set(tx, 9.5, tz);
     scene.add(mesh);
     particles.push({
       mesh,
-      vx: rx * 35 + (Math.random() - 0.5) * 12,
-      vy: 18 + Math.random() * 14,
-      vz: rz * 35 + (Math.random() - 0.5) * 12,
-      grav: 25,
+      vx: rx * (moving ? 40 : 20) + (Math.random() - 0.5) * 10,
+      vy: 14 + Math.random() * 12,
+      vz: rz * (moving ? 40 : 20) + (Math.random() - 0.5) * 10,
+      grav: 28,   // дым поднимается
+      grow: moving ? 0.9 : 0.7,
       born: performance.now() + delayMs,
       life: 900 + Math.random() * 400,
     });
