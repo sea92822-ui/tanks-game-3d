@@ -205,7 +205,7 @@ function generateObstacles() {
       z < o.z + o.d + 20 && z + s > o.z - 20
     );
     if (overlaps) continue;
-    list.push({ x, z, w: s, d: s, type: 'tree' });
+    list.push({ x, z, w: s, d: s, type: 'tree', standing: true });
     trees++;
   }
 
@@ -478,7 +478,7 @@ function updatePlayerMovement(p, dt) {
   if (dir !== 0) {
     const dx = Math.sin(p.chassisAngle) * dir * speed * dt;
     const dz = Math.cos(p.chassisAngle) * dir * speed * dt;
-    tryMove(p, p.x + dx, p.z + dz);
+    tryMove(p, p.x + dx, p.z + dz, dt);
   }
 
   // Башня плавно доворачивается к углу, присланному клиентом
@@ -545,15 +545,55 @@ function applyTrampolines(p, now, dt) {
   }
 }
 
-function tryMove(p, newX, newZ) {
+// Деревья: сносятся под напором танка, но замедляют его
+const TREE_PUSH_RATE = 90;  // накопление «ломки» в секунду при контакте
+const TREE_HP = 45;         // ~0.5 сек напора, чтобы снести
+
+// solid — жёсткое препятствие, tree — стоящее дерево (сносится), null — свободно
+function obstacleAt(x, z) {
+  for (const o of OBSTACLES) {
+    if (!circleRectCollision(x, z, TANK_RADIUS, o)) continue;
+    if (o.type === 'tree') {
+      if (o.standing) return 'tree';
+      continue; // срубленное дерево не мешает
+    }
+    return 'solid';
+  }
+  return null;
+}
+
+function tryMove(p, newX, newZ, dt) {
   newX = Math.max(TANK_RADIUS, Math.min(WORLD.width - TANK_RADIUS, newX));
   newZ = Math.max(TANK_RADIUS, Math.min(WORLD.depth - TANK_RADIUS, newZ));
 
-  const collidesX = OBSTACLES.some(o => circleRectCollision(newX, p.z, TANK_RADIUS, o));
-  if (!collidesX) p.x = newX;
+  // По X
+  const cX = obstacleAt(newX, p.z);
+  if (cX === 'tree') {
+    // дерево мешает: едем медленно и ломаем его
+    p.x += (newX - p.x) * 0.25;
+    pushTree(p, newX, p.z, dt);
+  } else if (!cX) {
+    p.x = newX;
+  }
 
-  const collidesZ = OBSTACLES.some(o => circleRectCollision(p.x, newZ, TANK_RADIUS, o));
-  if (!collidesZ) p.z = newZ;
+  // По Z
+  const cZ = obstacleAt(p.x, newZ);
+  if (cZ === 'tree') {
+    p.z += (newZ - p.z) * 0.25;
+    pushTree(p, p.x, newZ, dt);
+  } else if (!cZ) {
+    p.z = newZ;
+  }
+}
+
+function pushTree(p, x, z, dt) {
+  const tree = OBSTACLES.find(o => o.type === 'tree' && o.standing && circleRectCollision(x, z, TANK_RADIUS, o));
+  if (!tree) return;
+  tree.hp = (tree.hp || 0) + TREE_PUSH_RATE * dt;
+  if (tree.hp >= TREE_HP) {
+    tree.standing = false;
+    io.emit('treeDown', { i: OBSTACLES.indexOf(tree), x: tree.x + tree.w / 2, z: tree.z + tree.d / 2 });
+  }
 }
 
 function lerpAngle(a, b, t) {
@@ -630,7 +670,7 @@ function updateBullets(dt, now) {
       continue;
     }
 
-    const hitObstacle = OBSTACLES.some(o => circleRectCollision(b.x, b.z, BULLET_RADIUS, o));
+    const hitObstacle = OBSTACLES.some(o => (o.type === 'tree' && !o.standing) ? false : circleRectCollision(b.x, b.z, BULLET_RADIUS, o));
     if (hitObstacle) {
       if (b.ricochet > 0) {
         // «Рикошет»: снаряд отскакивает от препятствия 1 раз
@@ -879,7 +919,11 @@ function broadcastState() {
 
   const pickupsState = pickups.filter(pk => pk.active).map(pk => ({ id: pk.id, type: pk.type, x: pk.x, z: pk.z }));
 
-  io.emit('state', { players: playersState, bullets: bulletsState, pickups: pickupsState, trampolines: TRAMPOLINES });
+  const treesState = OBSTACLES
+    .map((o, i) => (o.type === 'tree' ? { i, standing: o.standing } : null))
+    .filter(Boolean);
+
+  io.emit('state', { players: playersState, bullets: bulletsState, pickups: pickupsState, trampolines: TRAMPOLINES, trees: treesState });
 }
 
 setInterval(tick, 1000 / TICK_RATE);

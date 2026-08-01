@@ -219,8 +219,43 @@ function buildGround() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// ДЕРЕВЬЯ: сносятся танком, следят за состоянием с сервера
+// ---------------------------------------------------------------------------
+const treeMeshes = new Map();   // index -> { group, fallen }
+const fallingTrees = [];        // { group, born, dur, ax } — анимация падения
+
+function startTreeFall(i) {
+  const t = treeMeshes.get(i);
+  if (!t || t.fallen) return;
+  t.fallen = true;
+  fallingTrees.push({ group: t.group, born: performance.now(), dur: 700, ax: (Math.random() < 0.5 ? -1 : 1) * (1.45 + Math.random() * 0.2) });
+  // пыль и листья у основания
+  spawnParticles(t.group.position.x, 4, t.group.position.z, 6, [0xa8906c, 0x7a9c5a, 0x2f8a3c], 40, 1.2, 600, 1.8, 1.2);
+}
+
+function updateFallingTrees(now) {
+  for (let i = fallingTrees.length - 1; i >= 0; i--) {
+    const f = fallingTrees[i];
+    const t = Math.min(1, (now - f.born) / f.dur);
+    f.group.rotation.z = f.ax * easeOutBack(t);
+    if (t >= 1) fallingTrees.splice(i, 1);
+  }
+}
+
+function easeOutBack(t) {
+  const c1 = 1.4, c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+}
+
+function syncTrees(trees) {
+  (trees || []).forEach(t => {
+    if (!t.standing) startTreeFall(t.i);
+  });
+}
+
 function buildObstacles() {
-  obstaclesData.forEach(o => {
+  obstaclesData.forEach((o, i) => {
     let mesh;
 
     if (o.type === 'rock') {
@@ -242,6 +277,9 @@ function buildObstacles() {
       tree.add(crown);
       tree.position.set(o.x + o.w / 2, 0, o.z + o.d / 2);
       mesh = tree;
+      // деревья отдельно храним: по индексу отслеживаем снос
+      treeMeshes.set(i, { group: tree, fallen: !o.standing });
+      if (!o.standing) tree.rotation.z = -1.55; // уже срубленное (старый сервер)
     } else {
       mesh = new THREE.Mesh(new THREE.BoxGeometry(o.w, 40, o.d), new THREE.MeshStandardMaterial({ color: 0x6b6b6b }));
       mesh.position.set(o.x + o.w / 2, 20, o.z + o.d / 2);
@@ -762,6 +800,11 @@ function connectToServer(nickname, color) {
     updateLeaderboard();
     checkDeathScreen();
     ensureTrampolines(state.trampolines);
+    syncTrees(state.trees);
+  });
+
+  socket.on('treeDown', (data) => {
+    startTreeFall(data.i);
   });
 
   socket.on('bounce', () => {
@@ -2557,6 +2600,7 @@ function animate() {
     updateClouds(dt);
     updateScopeInfo();
     updateArtilleryVisuals(now);
+    updateFallingTrees(now);
     updateCamera(players);
   }
 
