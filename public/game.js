@@ -21,6 +21,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'hi
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75)); // ограничиваем нагрузку на retina-экранах
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 sceneContainer.appendChild(renderer.domElement);
 
 window.addEventListener('resize', () => {
@@ -32,16 +33,20 @@ window.addEventListener('resize', () => {
 // ---------------------------------------------------------------------------
 // СВЕТ
 // ---------------------------------------------------------------------------
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
 scene.add(ambientLight);
 
-const sunLight = new THREE.DirectionalLight(0xfff4e0, 0.9);
+const hemiLight = new THREE.HemisphereLight(0xbfd8ff, 0x3a6b3d, 0.5);
+scene.add(hemiLight);
+
+const sunLight = new THREE.DirectionalLight(0xfff4e0, 1.0);
 sunLight.position.set(300, 500, 200);
 sunLight.castShadow = true;
-sunLight.shadow.camera.left = -600;
-sunLight.shadow.camera.right = 600;
-sunLight.shadow.camera.top = 600;
-sunLight.shadow.camera.bottom = -600;
+sunLight.shadow.bias = -0.0005;
+sunLight.shadow.camera.left = -800;
+sunLight.shadow.camera.right = 800;
+sunLight.shadow.camera.top = 800;
+sunLight.shadow.camera.bottom = -800;
 sunLight.shadow.mapSize.set(2048, 2048);
 scene.add(sunLight);
 
@@ -348,19 +353,24 @@ function connectToServer(nickname, color) {
     if (data.barrel) breakOffBarrel(data.id);
   });
 
-  socket.on('pong', () => {
+  socket.on('bulletBlocked', (data) => {
+    spawnSpark(data.x, data.z);
+    if (data.ownerId === selfId) showDamageText(data.x, data.z, 'НЕ ПРОБИТ', '#ffb84d');
+  });
+
+  socket.on('latencyRes', () => {
     pingMs = Date.now() - pingSentAt;
   });
 }
 
-// Замер пинга каждые 2 секунды
+// Замер пинга каждую секунду
 let pingMs = null;
 let pingSentAt = 0;
 setInterval(() => {
   if (!socket || !socket.connected || !selfId) return;
   pingSentAt = Date.now();
-  socket.emit('ping');
-}, 2000);
+  socket.emit('latencyReq');
+}, 1000);
 
 // ---------------------------------------------------------------------------
 // ВВОД: клавиатура
@@ -821,6 +831,15 @@ function spawnExplosion(x, z) {
   group.position.set(x, 18, z);
   scene.add(group);
   explosions.push({ group, born: performance.now() });
+
+  // Разлетающиеся искры
+  spawnParticles(x, 18, z, 10, [0xff8a2a, 0xffd75e, 0xff5a3d, 0xffffff], 170, 1.2, 650, 2.2);
+}
+
+// Рикошет: снаряд не пробил преграду
+function spawnSpark(x, z) {
+  if (!settingsState.effects) return;
+  spawnParticles(x, 18, z, 9, [0xffffff, 0xffe9a8, 0xffc24d], 280, 0.8, 380, 1.5);
 }
 
 function updateExplosions() {
@@ -838,6 +857,81 @@ function updateExplosions() {
       e.group.children.forEach(c => { if (c.isMesh) c.material.dispose(); });
       explosions.splice(i, 1);
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ЧАСТИЦЫ (искры, огонь, дым)
+// ---------------------------------------------------------------------------
+const particles = [];
+const particleGeo = new THREE.SphereGeometry(1.8, 6, 6);
+
+function spawnParticles(x, y, z, count, colors, speed, upBias, life, size) {
+  if (!settingsState.effects) return;
+  for (let i = 0; i < count; i++) {
+    const mat = new THREE.MeshBasicMaterial({ color: colors[i % colors.length], transparent: true });
+    const mesh = new THREE.Mesh(particleGeo, mat);
+    mesh.scale.setScalar(size * (0.6 + Math.random() * 0.8));
+    mesh.position.set(x, y, z);
+    scene.add(mesh);
+    particles.push({
+      mesh,
+      vx: (Math.random() - 0.5) * speed,
+      vy: Math.random() * speed * upBias + speed * 0.2,
+      vz: (Math.random() - 0.5) * speed,
+      born: performance.now(),
+      life,
+    });
+  }
+}
+
+function updateParticles(dt, now) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    const age = now - p.born;
+    if (age > p.life) {
+      scene.remove(p.mesh);
+      p.mesh.material.dispose();
+      particles.splice(i, 1);
+      continue;
+    }
+    p.vy -= 60 * dt;
+    p.mesh.position.x += p.vx * dt;
+    p.mesh.position.y += p.vy * dt;
+    p.mesh.position.z += p.vz * dt;
+    const t = age / p.life;
+    p.mesh.material.opacity = 1 - t;
+    p.mesh.scale.multiplyScalar(1 + dt * 2);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ВСПЛЫВАЮЩИЙ ТЕКСТ В МИРЕ (например «НЕ ПРОБИТ»)
+// ---------------------------------------------------------------------------
+const damageTexts = [];
+function showDamageText(x, z, text, color) {
+  const el = document.createElement('div');
+  el.className = 'damageText';
+  el.textContent = text;
+  el.style.color = color || '#fff';
+  document.body.appendChild(el);
+  damageTexts.push({ el, x, y: 26, z, born: performance.now() });
+}
+
+function updateDamageTexts(now) {
+  for (let i = damageTexts.length - 1; i >= 0; i--) {
+    const d = damageTexts[i];
+    const age = now - d.born;
+    if (age > 1200) {
+      d.el.remove();
+      damageTexts.splice(i, 1);
+      continue;
+    }
+    const v = new THREE.Vector3(d.x, d.y, d.z).project(camera);
+    d.el.style.display = v.z > 1 ? 'none' : 'block';
+    d.el.style.left = ((v.x + 1) / 2 * window.innerWidth) + 'px';
+    d.el.style.top = ((1 - v.y) / 2 * window.innerHeight) + 'px';
+    d.el.style.opacity = 1 - age / 1200;
   }
 }
 
@@ -964,6 +1058,10 @@ function destroyTank(mesh) {
   mesh.children.forEach(child => {
     if (child.isMesh) child.material.color.set(0x4a4a4a);
   });
+  // Большой взрыв, огонь и дым
+  spawnExplosion(mesh.position.x, mesh.position.z);
+  spawnParticles(mesh.position.x, 22, mesh.position.z, 14, [0xff8a2a, 0xff5a3d, 0xffd75e], 230, 1.4, 900, 3);
+  spawnParticles(mesh.position.x, 24, mesh.position.z, 8, [0x555555, 0x777777, 0x444444], 70, 2.2, 1600, 5.5);
 }
 
 // Звук выстрела
@@ -1076,8 +1174,10 @@ function animate() {
     syncBullets(bullets);
     updateMuzzleFlashes();
     updateExplosions();
+    updateParticles(dt, now);
     updateFlyingBits(dt, now);
     updateTrackMarks(players, now);
+    updateDamageTexts(now);
     updateCamera(players);
   }
 

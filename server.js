@@ -209,7 +209,7 @@ io.on('connection', (socket) => {
     p.pendingUpgradeChoice = false;
   });
 
-  socket.on('ping', () => socket.emit('pong'));
+  socket.on('latencyReq', () => socket.emit('latencyRes'));
 
   socket.on('disconnect', () => {
     const p = players[socket.id];
@@ -334,6 +334,7 @@ function updateBullets(dt, now) {
 
     const hitObstacle = OBSTACLES.some(o => circleRectCollision(b.x, b.z, BULLET_RADIUS, o));
     if (hitObstacle) {
+      io.emit('bulletBlocked', { x: b.x, z: b.z, ownerId: b.ownerId });
       bullets.splice(i, 1);
       continue;
     }

@@ -145,6 +145,18 @@ html, body {
   font-weight: bold;
 }
 
+/* ---------- Всплывающий текст в мире ---------- */
+.damageText {
+  position: fixed;
+  transform: translate(-50%, -100%);
+  font-size: 17px;
+  font-weight: bold;
+  text-shadow: 1px 1px 3px #000;
+  pointer-events: none;
+  z-index: 20;
+  user-select: none;
+}
+
 /* ---------- Пинг ---------- */
 #pingText {
   position: fixed;
