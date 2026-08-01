@@ -290,9 +290,101 @@ function ensureTrampolines(trampolines) {
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// МОДЕЛИ ТАНКОВ (косметика, открываются уровнями)
+// ---------------------------------------------------------------------------
+const TANK_MODELS = [
+  { id: 'medium', name: 'Средний', level: 1 },
+  { id: 'light',  name: 'Лёгкий',  level: 2 },
+  { id: 'heavy',  name: 'Тяжёлый', level: 6 },
+];
+
+const TANK_MODEL_CFG = {
+  medium: {
+    hullW: 28, hullH: 9, hullL: 40, hullY: 7.5,
+    upperW: 24, upperH: 4, upperL: 30, upperY: 13,
+    glacisW: 24, glacisH: 5, glacisL: 8, glacisRot: -0.45, glacisY: 12.8, glacisZ: 16.5,
+    rearW: 24, rearH: 4, rearL: 6, rearRot: 0.3, rearY: 13.2, rearZ: -16,
+    bandW: 7, bandH: 11.5, bandL: 47, bandY: 7, trackOff: 15,
+    wheelR: 4.2, wheelW: 7.6, wheelN: 5, bigR: 5.4, bigRearR: 4.8,
+    skirtW: 0.8, skirtH: 5.5, skirtL: 44, skirtX: 12.2, skirtY: 10,
+    fenderW: 5, fenderH: 1, fenderL: 44, fenderX: 13.5, fenderY: 12.9,
+    pipeX: 6, pipeY: 9, pipeZ: -20.5,
+    lampX: 8, lampY: 12.5, lampZ: 20.5,
+    hookX: 9, hookY: 4.5, hookZ: 20.8,
+    turretY: 17,
+    baseR1: 11, baseR2: 13, baseH: 8,
+    midR1: 9.5, midR2: 11, midH: 5, midY: 6.5,
+    domeR: 10.5, domeY: 10,
+    cupolaR1: 3.2, cupolaR2: 3.8, cupolaH: 3, cupolaY: 13.5, hatchY: 15.4,
+    mgX: 4, mgY: 14, mgZ: 4, mgR: 0.5, mgL: 5,
+    antX: -6, antY: 16, antZ: -4, antH: 13,
+    stowW: 7, stowH: 3.5, stowL: 5, stowY: 7.5, stowZ: -12,
+    barY: 1, barZ: 20,
+    tubeR1: 2.2, tubeR2: 2.6, tubeL: 26,
+    brakeR1: 3, brakeR2: 2.8, brakeH: 4.5, brakeZ: 14.5,
+    breechR1: 4.2, breechR2: 4.6, breechH: 4, breechZ: -10,
+    tipY: 35,
+  },
+  light: {
+    hullW: 23, hullH: 8, hullL: 34, hullY: 6.5,
+    upperW: 20, upperH: 3.5, upperL: 25, upperY: 11.5,
+    glacisW: 20, glacisH: 4, glacisL: 7, glacisRot: -0.4, glacisY: 11.4, glacisZ: 14,
+    rearW: 20, rearH: 3.5, rearL: 5, rearRot: 0.25, rearY: 11.8, rearZ: -13.5,
+    bandW: 5.5, bandH: 9.5, bandL: 39, bandY: 6, trackOff: 12.5,
+    wheelR: 3.4, wheelW: 6, wheelN: 4, bigR: 4.4, bigRearR: 3.9,
+    skirtW: 0.7, skirtH: 4.5, skirtL: 36, skirtX: 10.3, skirtY: 8.5,
+    fenderW: 4, fenderH: 0.8, fenderL: 36, fenderX: 11.5, fenderY: 11,
+    pipeX: 5, pipeY: 8, pipeZ: -17.2,
+    lampX: 6.5, lampY: 10.8, lampZ: 17.4,
+    hookX: 7.5, hookY: 4, hookZ: 17.6,
+    turretY: 15,
+    baseR1: 9, baseR2: 10.5, baseH: 6.5,
+    midR1: 7.8, midR2: 9, midH: 4, midY: 5.2,
+    domeR: 8.5, domeY: 8,
+    cupolaR1: 2.5, cupolaR2: 3, cupolaH: 2.5, cupolaY: 11, hatchY: 12.6,
+    mgX: 3.5, mgY: 11.5, mgZ: 3, mgR: 0.45, mgL: 4,
+    antX: -5, antY: 13, antZ: -3, antH: 11,
+    stowW: 5.5, stowH: 3, stowL: 4, stowY: 6, stowZ: -10,
+    barY: 0.8, barZ: 16,
+    tubeR1: 1.8, tubeR2: 2.1, tubeL: 21,
+    brakeR1: 2.4, brakeR2: 2.3, brakeH: 3.5, brakeZ: 12,
+    breechR1: 3.4, breechR2: 3.8, breechH: 3.5, breechZ: -8,
+    tipY: 30,
+  },
+  heavy: {
+    hullW: 34, hullH: 11, hullL: 47, hullY: 8.5,
+    upperW: 29, upperH: 4.5, upperL: 36, upperY: 15.5,
+    glacisW: 29, glacisH: 6, glacisL: 9, glacisRot: -0.5, glacisY: 15.2, glacisZ: 19.5,
+    rearW: 29, rearH: 4.5, rearL: 7, rearRot: 0.32, rearY: 15.8, rearZ: -18.8,
+    bandW: 8.5, bandH: 14, bandL: 53, bandY: 8, trackOff: 18.5,
+    wheelR: 5, wheelW: 9, wheelN: 6, bigR: 6.4, bigRearR: 5.6,
+    skirtW: 1, skirtH: 6.5, skirtL: 50, skirtX: 14.8, skirtY: 11,
+    fenderW: 6, fenderH: 1.2, fenderL: 50, fenderX: 16.8, fenderY: 15.2,
+    pipeX: 7, pipeY: 10.5, pipeZ: -24.2,
+    lampX: 10, lampY: 14.8, lampZ: 24.2,
+    hookX: 11, hookY: 5, hookZ: 24.5,
+    turretY: 20,
+    baseR1: 13.5, baseR2: 15.5, baseH: 9.5,
+    midR1: 11.5, midR2: 13.5, midH: 6, midY: 7.8,
+    domeR: 12.5, domeY: 12.5,
+    cupolaR1: 4, cupolaR2: 4.6, cupolaH: 3.5, cupolaY: 16.5, hatchY: 18.5,
+    mgX: 5, mgY: 17, mgZ: 5, mgR: 0.6, mgL: 6,
+    antX: -7, antY: 19, antZ: -5, antH: 15,
+    stowW: 9, stowH: 4, stowL: 6, stowY: 9, stowZ: -14,
+    barY: 1.2, barZ: 24,
+    tubeR1: 2.9, tubeR2: 3.3, tubeL: 32,
+    brakeR1: 3.9, brakeR2: 3.6, brakeH: 5.5, brakeZ: 18,
+    breechR1: 5.4, breechR2: 5.9, breechH: 5, breechZ: -12,
+    tipY: 42,
+  },
+};
+
+// ---------------------------------------------------------------------------
 // ФАБРИКА ТАНКА (корпус + независимо вращаемая башня + дуло)
 // ---------------------------------------------------------------------------
-function createTankMesh(color) {
+function createTankMesh(color, modelId) {
+  const c = TANK_MODEL_CFG[modelId] || TANK_MODEL_CFG.medium;
   const group = new THREE.Group();
 
   const bodyMat = new THREE.MeshStandardMaterial({ color, metalness: 0.75, roughness: 0.28 }); // блик от солнца
@@ -302,170 +394,174 @@ function createTankMesh(color) {
   // --- Гусеницы и ходовая часть ---
   [-1, 1].forEach(side => {
     // Резиновая лента
-    const band = new THREE.Mesh(new THREE.BoxGeometry(7, 11.5, 47), rubberMat);
-    band.position.set(side * 15, 7, 0);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(c.bandW, c.bandH, c.bandL), rubberMat);
+    band.position.set(side * c.trackOff, c.bandY, 0);
     band.castShadow = true;
     band.receiveShadow = true;
     group.add(band);
 
-    // Опорные катки (5 штук)
-    for (let i = 0; i < 5; i++) {
-      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.2, 7.6, 14), darkMat);
+    // Опорные катки
+    const spacing = c.bandL * 0.38 * 2 / (c.wheelN - 1);
+    for (let i = 0; i < c.wheelN; i++) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(c.wheelR, c.wheelR, c.wheelW, 14), darkMat);
       wheel.rotation.z = Math.PI / 2;
-      wheel.position.set(side * 15, 7, -18 + i * 9);
+      wheel.position.set(side * c.trackOff, c.bandY, -c.bandL * 0.38 + i * spacing);
       wheel.castShadow = true;
       group.add(wheel);
     }
     // Ведущее колесо (спереди) и ленивец (сзади)
-    [-20, 20].forEach((z, i) => {
-      const big = new THREE.Mesh(new THREE.CylinderGeometry(i === 1 ? 5.4 : 4.8, i === 1 ? 5.4 : 4.8, 7.6, 14), darkMat);
+    [-1, 1].forEach((dir, i) => {
+      const r = dir === 1 ? c.bigR : c.bigRearR;
+      const big = new THREE.Mesh(new THREE.CylinderGeometry(r, r, c.wheelW, 14), darkMat);
       big.rotation.z = Math.PI / 2;
-      big.position.set(side * 15, 7, z);
+      big.position.set(side * c.trackOff, c.bandY, dir * (c.bandL / 2 - 2));
       big.castShadow = true;
       group.add(big);
     });
 
     // Бортовой экран (тонкая пластина над гусеницей)
-    const skirt = new THREE.Mesh(new THREE.BoxGeometry(0.8, 5.5, 44), darkMat);
-    skirt.position.set(side * 12.2, 10, 0);
+    const skirt = new THREE.Mesh(new THREE.BoxGeometry(c.skirtW, c.skirtH, c.skirtL), darkMat);
+    skirt.position.set(side * c.skirtX, c.skirtY, 0);
     skirt.castShadow = true;
     group.add(skirt);
 
     // Надгусеничная полка
-    const fender = new THREE.Mesh(new THREE.BoxGeometry(5, 1, 44), bodyMat);
-    fender.position.set(side * 13.5, 12.9, 0);
+    const fender = new THREE.Mesh(new THREE.BoxGeometry(c.fenderW, c.fenderH, c.fenderL), bodyMat);
+    fender.position.set(side * c.fenderX, c.fenderY, 0);
     fender.castShadow = true;
     group.add(fender);
   });
 
   // --- Корпус ---
   // Нижняя часть
-  const hull = new THREE.Mesh(new THREE.BoxGeometry(28, 9, 40), bodyMat);
-  hull.position.y = 7.5;
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(c.hullW, c.hullH, c.hullL), bodyMat);
+  hull.position.y = c.hullY;
   hull.castShadow = true;
   hull.receiveShadow = true;
   group.add(hull);
 
   // Верхняя плита
-  const upper = new THREE.Mesh(new THREE.BoxGeometry(24, 4, 30), bodyMat);
-  upper.position.y = 13;
+  const upper = new THREE.Mesh(new THREE.BoxGeometry(c.upperW, c.upperH, c.upperL), bodyMat);
+  upper.position.y = c.upperY;
   upper.castShadow = true;
   group.add(upper);
 
   // Наклонный лобовой лист (гласис)
-  const glacis = new THREE.Mesh(new THREE.BoxGeometry(24, 5, 8), bodyMat);
-  glacis.rotation.x = -0.45;
-  glacis.position.set(0, 12.8, 16.5);
+  const glacis = new THREE.Mesh(new THREE.BoxGeometry(c.glacisW, c.glacisH, c.glacisL), bodyMat);
+  glacis.rotation.x = c.glacisRot;
+  glacis.position.set(0, c.glacisY, c.glacisZ);
   glacis.castShadow = true;
   group.add(glacis);
 
   // Наклонная кормовая плита
-  const rearPlate = new THREE.Mesh(new THREE.BoxGeometry(24, 4, 6), bodyMat);
-  rearPlate.rotation.x = 0.3;
-  rearPlate.position.set(0, 13.2, -16);
+  const rearPlate = new THREE.Mesh(new THREE.BoxGeometry(c.rearW, c.rearH, c.rearL), bodyMat);
+  rearPlate.rotation.x = c.rearRot;
+  rearPlate.position.set(0, c.rearY, c.rearZ);
   rearPlate.castShadow = true;
   group.add(rearPlate);
 
   // Выхлопные трубы (корма)
-  [-6, 6].forEach(x => {
+  [-c.pipeX, c.pipeX].forEach(x => {
     const pipe = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 3, 8), darkMat);
     pipe.rotation.x = Math.PI / 2;
-    pipe.position.set(x, 9, -20.5);
+    pipe.position.set(x, c.pipeY, c.pipeZ);
     pipe.castShadow = true;
     group.add(pipe);
   });
 
   // Фары (перед)
-  [-8, 8].forEach(x => {
+  [-c.lampX, c.lampX].forEach(x => {
     const lamp = new THREE.Mesh(
       new THREE.BoxGeometry(2, 2, 1.5),
       new THREE.MeshStandardMaterial({ color: 0xfff6c8, emissive: 0xffe28a, emissiveIntensity: 0.7, metalness: 0.3, roughness: 0.4 })
     );
-    lamp.position.set(x, 12.5, 20.5);
+    lamp.position.set(x, c.lampY, c.lampZ);
     group.add(lamp);
   });
 
   // Буксирные крюки
-  [-9, 9].forEach(x => {
+  [-c.hookX, c.hookX].forEach(x => {
     const hook = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.8, 1.8), darkMat);
-    hook.position.set(x, 4.5, 20.8);
+    hook.position.set(x, c.hookY, c.hookZ);
     group.add(hook);
   });
 
   // --- Башня (вращается независимо от корпуса) ---
   const turretPivot = new THREE.Group();
-  turretPivot.position.y = 17;
+  turretPivot.position.y = c.turretY;
   group.add(turretPivot);
 
   // Основание башни — скошенный цилиндр
-  const turretBase = new THREE.Mesh(new THREE.CylinderGeometry(11, 13, 8, 16), bodyMat);
+  const turretBase = new THREE.Mesh(new THREE.CylinderGeometry(c.baseR1, c.baseR2, c.baseH, 16), bodyMat);
   turretBase.castShadow = true;
   turretPivot.add(turretBase);
 
   // Скошенная средняя часть
-  const turretMid = new THREE.Mesh(new THREE.CylinderGeometry(9.5, 11, 5, 16), bodyMat);
-  turretMid.position.y = 6.5;
+  const turretMid = new THREE.Mesh(new THREE.CylinderGeometry(c.midR1, c.midR2, c.midH, 16), bodyMat);
+  turretMid.position.y = c.midY;
   turretMid.castShadow = true;
   turretPivot.add(turretMid);
 
   // Купол башни
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(10.5, 14, 10), bodyMat);
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(c.domeR, 14, 10), bodyMat);
   dome.scale.y = 0.5;
-  dome.position.y = 10;
+  dome.position.y = c.domeY;
   dome.castShadow = true;
   turretPivot.add(dome);
 
   // Командирская башенка и люк
-  const cupola = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.8, 3, 10), darkMat);
-  cupola.position.y = 13.5;
+  const cupola = new THREE.Mesh(new THREE.CylinderGeometry(c.cupolaR1, c.cupolaR2, c.cupolaH, 10), darkMat);
+  cupola.position.y = c.cupolaY;
   cupola.castShadow = true;
   turretPivot.add(cupola);
-  const hatch = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 0.9, 10), bodyMat);
-  hatch.position.y = 15.4;
+  const hatch = new THREE.Mesh(new THREE.CylinderGeometry(c.cupolaR1 * 0.8, c.cupolaR1 * 0.8, 0.9, 10), bodyMat);
+  hatch.position.y = c.hatchY;
   turretPivot.add(hatch);
 
   // Пулемёт на башенке
-  const mg = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 5, 8), darkMat);
+  const mg = new THREE.Mesh(new THREE.CylinderGeometry(c.mgR, c.mgR, c.mgL, 8), darkMat);
   mg.rotation.x = Math.PI / 2;
-  mg.position.set(4, 14, 4);
+  mg.position.set(c.mgX, c.mgY, c.mgZ);
   turretPivot.add(mg);
 
   // Антенна
-  const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 13, 6), darkMat);
-  antenna.position.set(-6, 16, -4);
+  const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, c.antH, 6), darkMat);
+  antenna.position.set(c.antX, c.antY, c.antZ);
   turretPivot.add(antenna);
 
   // ЗИП-ящик на корме башни
-  const stowage = new THREE.Mesh(new THREE.BoxGeometry(7, 3.5, 5), darkMat);
-  stowage.position.set(0, 7.5, -12);
+  const stowage = new THREE.Mesh(new THREE.BoxGeometry(c.stowW, c.stowH, c.stowL), darkMat);
+  stowage.position.set(0, c.stowY, c.stowZ);
   stowage.castShadow = true;
   turretPivot.add(stowage);
 
   // --- Дуло (группа: ствол + дульный тормоз + казённик) ---
   const barrel = new THREE.Group();
-  barrel.position.set(0, 1, 20); // дуло смотрит по +Z (вперёд), сдвинуто вперёд от центра
+  barrel.position.set(0, c.barY, c.barZ); // дуло смотрит по +Z (вперёд), сдвинуто вперёд от центра
 
-  const tube = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.6, 26, 12), darkMat);
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(c.tubeR1, c.tubeR2, c.tubeL, 12), darkMat);
   tube.rotation.x = Math.PI / 2;
   tube.castShadow = true;
   barrel.add(tube);
 
   // Дульный тормоз на конце ствола
-  const muzzleBrake = new THREE.Mesh(new THREE.CylinderGeometry(3, 2.8, 4.5, 10), darkMat);
+  const muzzleBrake = new THREE.Mesh(new THREE.CylinderGeometry(c.brakeR1, c.brakeR2, c.brakeH, 10), darkMat);
   muzzleBrake.rotation.x = Math.PI / 2;
-  muzzleBrake.position.z = 14.5;
+  muzzleBrake.position.z = c.brakeZ;
   barrel.add(muzzleBrake);
 
   // Казённик у башни
-  const breech = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.6, 4, 12), darkMat);
+  const breech = new THREE.Mesh(new THREE.CylinderGeometry(c.breechR1, c.breechR2, c.breechH, 12), darkMat);
   breech.rotation.x = Math.PI / 2;
-  breech.position.z = -10;
+  breech.position.z = c.breechZ;
   barrel.add(breech);
 
   turretPivot.add(barrel);
 
   group.userData.turretPivot = turretPivot;
   group.userData.barrel = barrel;
+  group.userData.model = modelId || 'medium';
+  group.userData.turretY = c.turretY;
   group.userData.barrelTipLocal = new THREE.Vector3(0, 18, 34); // точка для камеры прицела
 
   return group;
@@ -546,6 +642,34 @@ function colorAvailable(color) {
   return !(color in LOCKED_COLORS) || levelInfo(xpTotal).level >= LOCKED_COLORS[color];
 }
 
+let selectedModel = 'medium';
+try { selectedModel = localStorage.getItem('tanksModel') || 'medium'; } catch (e) { /* ignore */ }
+
+function buildModelPicker() {
+  const wrap = document.getElementById('modelButtons');
+  TANK_MODELS.forEach(m => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'modelBtn' + (selectedModel === m.id ? ' selected' : '');
+    if (!modelAvailable(m.id)) b.classList.add('locked');
+    b.textContent = m.name + (m.level > 1 ? ` · Ур. ${m.level}` : '');
+    b.dataset.model = m.id;
+    b.addEventListener('click', () => {
+      if (!modelAvailable(m.id)) return;
+      selectedModel = m.id;
+      try { localStorage.setItem('tanksModel', m.id); } catch (e) { /* ignore */ }
+      wrap.querySelectorAll('.modelBtn').forEach(x => x.classList.toggle('selected', x === b));
+    });
+    wrap.appendChild(b);
+  });
+}
+
+function modelAvailable(modelId) {
+  const m = TANK_MODELS.find(x => x.id === modelId);
+  return !m || levelInfo(xpTotal).level >= m.level;
+}
+buildModelPicker();
+
 function buildColorPicker() {
   const wrap = document.getElementById('colorSwatches');
   TANK_COLORS.forEach(c => {
@@ -584,7 +708,7 @@ function connectToServer(nickname, color) {
   socket = io();
 
   socket.on('connect', () => {
-    socket.emit('join', { nickname, color });
+    socket.emit('join', { nickname, color, model: selectedModel });
   });
 
   socket.on('init', (data) => {
@@ -1161,15 +1285,16 @@ function spawnExhaustPuff(p, delayMs, moving) {
   const a = p.chassisAngle;
   const rx = -Math.sin(a);
   const rz = -Math.cos(a);
+  const c = TANK_MODEL_CFG[p.model] || TANK_MODEL_CFG.medium;
   for (const side of [-1, 1]) {
-    // дым из выхлопных труб на корме (модель: x=±6, y=9, z=-20.5)
-    const tx = p.x + rx * 20.5 + Math.cos(a) * side * 6;
-    const tz = p.z + rz * 20.5 - Math.sin(a) * side * 6;
+    // дым из выхлопных труб на корме (зависит от модели танка)
+    const tx = p.x + rx * -c.pipeZ + Math.cos(a) * side * c.pipeX;
+    const tz = p.z + rz * -c.pipeZ - Math.sin(a) * side * c.pipeX;
     const mat = new THREE.MeshBasicMaterial({ color: 0x9c9c9c, transparent: true });
     const mesh = new THREE.Mesh(particleGeo, mat);
     const size = moving ? 2.5 + Math.random() * 2 : 1.8 + Math.random() * 1.4;
     mesh.scale.setScalar(size);
-    mesh.position.set(tx, (p.y || 0) + 9.5, tz);
+    mesh.position.set(tx, (p.y || 0) + c.pipeY, tz);
     scene.add(mesh);
     particles.push({
       mesh,
@@ -1479,7 +1604,7 @@ function syncTanks(players) {
     let mesh = tankMeshes.get(p.id);
 
     if (!mesh) {
-      mesh = createTankMesh(p.color);
+      mesh = createTankMesh(p.color, p.model);
       scene.add(mesh);
       tankMeshes.set(p.id, mesh);
     }
@@ -1498,7 +1623,7 @@ function syncTanks(players) {
     if (mesh.userData.wrecked) {
       keepAsWreck(mesh);
       tankMeshes.delete(p.id);
-      mesh = createTankMesh(p.color);
+      mesh = createTankMesh(p.color, p.model);
       scene.add(mesh);
       tankMeshes.set(p.id, mesh);
     }
@@ -2219,9 +2344,10 @@ function updateCamera(players) {
     // Для своего танка используем мгновенный угол мыши, чтобы прицел не лагал
     const turretAngle = me.id === selfId ? targetTurretAngle : me.turretAngle;
     const myY = Math.max(0, me.y || 0);
+    const turretY = (tankMeshes.get(selfId) || {}).userData?.turretY || 17;
     const tipWorld = new THREE.Vector3(
       me.x + Math.sin(turretAngle) * 34,
-      35 + myY,
+      turretY + 18 + myY,
       me.z + Math.cos(turretAngle) * 34
     );
 

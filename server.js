@@ -221,6 +221,7 @@ for (let i = 0; i < PICKUP_COUNT; i++) {
 
 const TANK_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#ff6fa4',
   '#34495e', '#16a085', '#d35400', '#7f8c8d', '#8e44ad', '#ffffff'];
+const TANK_MODELS = ['medium', 'light', 'heavy'];
 const XP_PER_KILL = 100;
 
 function randomColor() {
@@ -260,7 +261,7 @@ function getSafeSpawnPoint() {
   return { x: WORLD.width / 2, z: WORLD.depth / 2 };
 }
 
-function createPlayer(id, nickname, color) {
+function createPlayer(id, nickname, color, model) {
   const spawn = getSafeSpawnPoint();
   return {
     id,
@@ -270,6 +271,7 @@ function createPlayer(id, nickname, color) {
     y: 0,             // высота при подбросе батутом
     vy: 0,            // вертикальная скорость
     bounceCooldown: 0,
+    model: TANK_MODELS.includes(model) ? model : 'medium',
     chassisAngle: 0,   // направление корпуса / движения (рад, вокруг Y)
     turretAngle: 0,    // направление башни (рад, вокруг Y) — независимо от корпуса
     color: color || randomColor(),
@@ -304,7 +306,7 @@ io.on('connection', (socket) => {
   socket.on('join', (data) => {
     const nickname = data && data.nickname ? String(data.nickname) : '';
     const color = data && TANK_COLORS.includes(data.color) ? data.color : null;
-    const player = createPlayer(socket.id, nickname, color);
+    const player = createPlayer(socket.id, nickname, color, data && data.model);
     players[socket.id] = player;
 
     socket.emit('init', {
@@ -816,6 +818,7 @@ function broadcastState() {
       chassisAngle: p.chassisAngle,
       turretAngle: p.turretAngle,
       color: p.color,
+      model: p.model,
       hp: p.hp,
       maxHp: p.maxHp,
       reloadMs: Math.round(BASE_RELOAD_MS),

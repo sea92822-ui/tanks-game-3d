@@ -816,3 +816,19 @@ body.touch #touchControls { display: block; }
   #touchControls { display: block; }
   #controlsHint { display: none; }
 }
+
+/* ---------- Выбор модели танка ---------- */
+#modelPicker { margin-top: 10px; }
+#modelPicker p { font-size: 13px; color: #aaa; margin-bottom: 6px; }
+#modelButtons { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.modelBtn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid #444;
+  background: #2a2a2a;
+  color: #eee;
+  cursor: pointer;
+  font-size: 13px;
+}
+.modelBtn.selected { border-color: #f1c40f; background: #3a3410; color: #ffd75e; }
+.modelBtn.locked { opacity: 0.45; cursor: not-allowed; }
