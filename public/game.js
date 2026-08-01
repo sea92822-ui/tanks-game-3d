@@ -356,14 +356,26 @@ function connectToServer(nickname, color) {
 
   socket.on('hit', (data) => {
     spawnExplosion(data.x, data.z);
+    // 3D-звук: панорама взрыва относительно камеры
+    playSound3D(explosionSound, data.x, data.z);
     // звук пробития слышит только тот, кто попал
     if (data.ownerId === selfId) playPenetrationSound();
+    // всплывающий урон у танка
+    if (data.damage > 0) showDamageText(data.x + (Math.random() - 0.5) * 24, data.z + (Math.random() - 0.5) * 24, '-' + data.damage, '#ff5a4d', 21);
     if (data.barrel) breakOffBarrel(data.id);
   });
 
   socket.on('bulletBlocked', (data) => {
     spawnSpark(data.x, data.z);
     if (data.ownerId === selfId) showDamageText(data.x, data.z, 'НЕ ПРОБИТ', '#ffb84d');
+  });
+
+  socket.on('pickup', (data) => {
+    const me = currentState.players.find(p => p.id === selfId);
+    if (!me) return;
+    const label = data.type === 'heal' ? '+30 HP' : data.type === 'speed' ? 'УСКОРЕНИЕ!' : 'СКОРОСТРЕЛ!';
+    const color = data.type === 'heal' ? '#2ecc71' : data.type === 'speed' ? '#f1c40f' : '#e74c3c';
+    showDamageText(me.x, me.z, label, color);
   });
 
   socket.on('latencyRes', () => {
@@ -393,6 +405,8 @@ window.addEventListener('keydown', (e) => {
     case 'KeyD': case 'ArrowRight': keys.right = true; break;
     case 'KeyQ': keys.camLeft = true; break;
     case 'KeyE': keys.camRight = true; break;
+    case 'Digit1': setAmmo('ap'); break;
+    case 'Digit2': setAmmo('he'); break;
   }
 });
 window.addEventListener('keyup', (e) => {
@@ -502,8 +516,148 @@ setInterval(() => {
     right: keys.right,
     targetTurretAngle,
     shooting: keys.shooting,
+    ammo: currentAmmo,
   });
 }, 1000 / 60);
+
+// ---------------------------------------------------------------------------
+// Тип снаряда: 1 — бронебойный (ap), 2 — фугас (he)
+// ---------------------------------------------------------------------------
+let currentAmmo = 'ap';
+const ammoApBtn = document.getElementById('ammoAp');
+const ammoHeBtn = document.getElementById('ammoHe');
+
+function setAmmo(type) {
+  if (currentAmmo === type) return;
+  currentAmmo = type;
+  ammoApBtn.classList.toggle('active', type === 'ap');
+  ammoHeBtn.classList.toggle('active', type === 'he');
+}
+
+ammoApBtn.addEventListener('click', () => setAmmo('ap'));
+ammoHeBtn.addEventListener('click', () => setAmmo('he'));
+
+// ---------------------------------------------------------------------------
+// БОНУСЫ НА КАРТЕ (аптечка / ускорение / скорострельность)
+// ---------------------------------------------------------------------------
+const pickupMeshes = new Map();
+
+function createPickupMesh(type) {
+  const group = new THREE.Group();
+  if (type === 'heal') {
+    const base = new THREE.Mesh(new THREE.BoxGeometry(18, 6, 18), new THREE.MeshBasicMaterial({ color: 0x27ae60 }));
+    base.position.y = 3;
+    const m1 = new THREE.Mesh(new THREE.BoxGeometry(12, 5, 5), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    const m2 = new THREE.Mesh(new THREE.BoxGeometry(5, 12, 5), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    m1.position.y = 11;
+    m2.position.y = 11;
+    group.add(base, m1, m2);
+  } else if (type === 'speed') {
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(9, 20, 6), new THREE.MeshBasicMaterial({ color: 0xf1c40f }));
+    cone.position.y = 16;
+    group.add(cone);
+  } else {
+    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(7, 7, 18, 8), new THREE.MeshBasicMaterial({ color: 0xe74c3c }));
+    cyl.position.y = 15;
+    group.add(cyl);
+  }
+  return group;
+}
+
+function syncPickups(pickupsList, now) {
+  const seen = new Set();
+  (pickupsList || []).forEach(pk => {
+    seen.add(pk.id);
+    let mesh = pickupMeshes.get(pk.id);
+    if (!mesh) {
+      mesh = createPickupMesh(pk.type);
+      pickupMeshes.set(pk.id, mesh);
+      scene.add(mesh);
+    }
+    mesh.position.set(pk.x, 3 + Math.sin(now / 350 + pk.id) * 4, pk.z);
+    mesh.rotation.y += 0.02;
+  });
+  for (const [id, mesh] of pickupMeshes) {
+    if (!seen.has(id)) {
+      scene.remove(mesh);
+      pickupMeshes.delete(id);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// МИНИ-КАРТА
+// ---------------------------------------------------------------------------
+const minimap = document.getElementById('minimap');
+const mmCtx = minimap.getContext('2d');
+const MM_SCALE = 10; // 2000 юнитов мира / 200 px карты
+let lastMMDraw = 0;
+
+function drawMinimap() {
+  const now = Date.now();
+  if (now - lastMMDraw < 50) return; // ~20 кадров/сек
+  lastMMDraw = now;
+
+  const W = minimap.width, H = minimap.height;
+  mmCtx.clearRect(0, 0, W, H);
+  mmCtx.fillStyle = 'rgba(10, 16, 10, 0.85)';
+  mmCtx.fillRect(0, 0, W, H);
+
+  // Препятствия
+  mmCtx.fillStyle = 'rgba(150, 150, 150, 0.9)';
+  obstaclesData.forEach(o => mmCtx.fillRect(o.x / MM_SCALE, o.z / MM_SCALE, o.w / MM_SCALE, o.d / MM_SCALE));
+
+  // Бонусы
+  (currentState.pickups || []).forEach(pk => {
+    mmCtx.fillStyle = pk.type === 'heal' ? '#27ae60' : pk.type === 'speed' ? '#f1c40f' : '#e74c3c';
+    mmCtx.fillRect(pk.x / MM_SCALE - 2, pk.z / MM_SCALE - 2, 4, 4);
+  });
+
+  // Игроки
+  currentState.players.forEach(p => {
+    const sx = p.x / MM_SCALE, sz = p.z / MM_SCALE;
+    mmCtx.fillStyle = p.id === selfId ? '#ffffff' : p.color;
+    mmCtx.beginPath();
+    mmCtx.arc(sx, sz, p.id === selfId ? 3.5 : 3, 0, Math.PI * 2);
+    mmCtx.fill();
+    if (p.id === selfId) {
+      mmCtx.strokeStyle = '#ffffff';
+      mmCtx.lineWidth = 1.5;
+      mmCtx.beginPath();
+      mmCtx.moveTo(sx, sz);
+      mmCtx.lineTo(sx + Math.sin(p.chassisAngle) * 9, sz + Math.cos(p.chassisAngle) * 9);
+      mmCtx.stroke();
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// ПРИЦЕЛ ОТ ПЕРВОГО ЛИЦА: сетка и дистанция до цели
+// ---------------------------------------------------------------------------
+const scopeDistance = document.getElementById('scopeDistance');
+const _scopeDir = new THREE.Vector3();
+
+function updateScopeInfo() {
+  if (!isScoped || !selfId) return;
+  camera.getWorldDirection(_scopeDir);
+  const t = -camera.position.y / Math.max(0.01, _scopeDir.y);
+  if (t <= 0) return;
+  const gx = camera.position.x + _scopeDir.x * t;
+  const gz = camera.position.z + _scopeDir.z * t;
+
+  let dist = Math.hypot(gx - camera.position.x, gz - camera.position.z);
+  let onTank = false;
+  for (const p of currentState.players) {
+    if (!p.alive || p.id === selfId) continue;
+    if (Math.hypot(p.x - gx, p.z - gz) < 26) {
+      dist = Math.hypot(p.x - camera.position.x, p.z - camera.position.z);
+      onTank = true;
+      break;
+    }
+  }
+  scopeDistance.textContent = Math.round(dist) + ' м';
+  scopeDistance.style.color = onTank ? '#ff5a4d' : '#ddd';
+}
 
 // ---------------------------------------------------------------------------
 // HUD: полоса здоровья
@@ -552,6 +706,28 @@ function updateHUD() {
   }
 
   updateActiveEffects(me.effects || []);
+  updateMyRank(me);
+  drawMinimap();
+}
+
+// ---------------------------------------------------------------------------
+// Ранги за килы
+// ---------------------------------------------------------------------------
+const RANKS_C = [
+  [0, 'Рядовой'], [3, 'Ефрейтор'], [6, 'Сержант'], [10, 'Лейтенант'], [15, 'Капитан'],
+  [21, 'Майор'], [28, 'Полковник'], [40, 'Генерал'], [60, 'Легенда'],
+];
+
+function rankName(kills) {
+  let name = RANKS_C[0][1];
+  for (const [k, n] of RANKS_C) if (kills >= k) name = n;
+  return name;
+}
+
+const myRankEl = document.getElementById('myRank');
+
+function updateMyRank(me) {
+  myRankEl.textContent = `${rankName(me.kills)} · ${me.kills} килов · ${me.deaths} смертей`;
 }
 
 // ---------------------------------------------------------------------------
@@ -585,8 +761,11 @@ function updateLeaderboard() {
   const sorted = [...currentState.players].sort((a, b) => b.kills - a.kills).slice(0, 10);
   leaderboardList.innerHTML = sorted.map(p => `
     <li class="${p.id === selfId ? 'me' : ''}">
-      <span class="name">${escapeHtml(p.nickname)}</span>
-      <span>${p.kills} 🎯</span>
+      <div class="lbRow">
+        <span class="name">${escapeHtml(p.nickname)}</span>
+        <span>${p.kills}/${p.deaths}</span>
+      </div>
+      <div class="lbRank">${rankName(p.kills)}</div>
     </li>
   `).join('');
 }
@@ -611,12 +790,14 @@ const ABILITY_CARDS = [
   ['emp', 'ЭМИ', '#8e44ad'], ['teleport', 'Телепорт', '#2c3e50'], ['storm', 'Гроза', '#3498db'],
   ['jam', 'Глушитель', '#7d3c98'], ['armor', 'Броня', '#bdc3c7'], ['ricochet', 'Рикошет', '#48c9b0'],
   ['overdrive', 'Перегрузка', '#f5b041'], ['sharp', 'Острота', '#d7bde2'], ['spin', 'Волчок', '#aed6f1'],
+  ['protect', 'Защита', '#f1c40f'],
 ];
 const ABILITY_ICONS = {
   speed: '»', damage: '✖', reload: '≈', bulletsp: '→', triple: '⋀', heal: '+', regen: '✚',
   shield: '⬢', invis: '◌', fastturret: '⟳', blast: '◉', freeze: '❄', burn: '🔥', lifesteal: '♥',
   crit: '★', pierce: '↦', nuke: '☢', kamikaze: '☠', second: '✝', thorn: '♧', rage: '⚡',
   emp: '〰', teleport: '⇤', storm: 'ϟ', jam: '✕', armor: '◆', ricochet: '⇄', overdrive: '⚙', sharp: '▲', spin: '⟲',
+  protect: '⛨',
 };
 
 const rouletteOverlay = document.getElementById('rouletteOverlay');
@@ -713,7 +894,7 @@ function checkDeathScreen() {
 
   if (!me.alive) {
     const elapsed = (Date.now() - deathShownAt) / 1000;
-    const remaining = Math.max(0, Math.ceil(2.5 - elapsed));
+    const remaining = Math.max(0, Math.ceil(3.5 - elapsed));
     respawnTimer.textContent = `Возрождение через ${remaining}...`;
   }
 }
@@ -1019,11 +1200,12 @@ function updateParticles(dt, now) {
 // ВСПЛЫВАЮЩИЙ ТЕКСТ В МИРЕ (например «НЕ ПРОБИТ»)
 // ---------------------------------------------------------------------------
 const damageTexts = [];
-function showDamageText(x, z, text, color) {
+function showDamageText(x, z, text, color, size) {
   const el = document.createElement('div');
   el.className = 'damageText';
   el.textContent = text;
   el.style.color = color || '#fff';
+  if (size) el.style.fontSize = size + 'px';
   document.body.appendChild(el);
   damageTexts.push({ el, x, y: 26, z, born: performance.now() });
 }
@@ -1162,12 +1344,8 @@ function updateTrackMarks(players, now) {
 }
 
 function destroyTank(mesh) {
-  // Звук взрыва танка
-  try {
-    explosionSound.currentTime = 0;
-    const p = explosionSound.play();
-    if (p) p.catch(() => {});
-  } catch (e) { /* ignore */ }
+  // Звук взрыва танка — с панорамой относительно камеры
+  playSound3D(explosionSound, mesh.position.x, mesh.position.z);
   // Башня (с дулом) взлетает и падает отдельно
   launchBit(breakOffPart(mesh.userData.turretPivot), 90);
   // Корпус остаётся обломком — подпаливаем
@@ -1221,6 +1399,7 @@ function playPenetrationSound() {
 
 function unlockAudio() {
   // Прогреваем ВСЕ звуки по жесту пользователя — иначе браузер блокирует их
+  initAudioCtx();
   [shotSound, explosionSound, penetrationSound, engineIdleSound, engineMoveSound].forEach(s => {
     try {
       s.currentTime = 0;
@@ -1252,6 +1431,67 @@ function updateEngineSound() {
     engineMoving = false;
     engineMoveSound.pause();
   }
+}
+
+// ---------------------------------------------------------------------------
+// 3D-звук: панорама и громкость по расстоянию от камеры
+// ---------------------------------------------------------------------------
+let audioCtx = null;
+
+function initAudioCtx() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) audioCtx = new AC();
+  }
+  return audioCtx;
+}
+
+function preparePannable(audio) {
+  if (audio._panned) return;
+  const ctx = initAudioCtx();
+  if (!ctx) return;
+  try {
+    const src = ctx.createMediaElementSource(audio);
+    const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    const gain = ctx.createGain();
+    src.connect(panner || gain);
+    if (panner) panner.connect(gain);
+    gain.connect(ctx.destination);
+    audio._panned = { ctx, panner, gain };
+  } catch (e) { /* ignore */ }
+}
+
+const _soundDir = new THREE.Vector3();
+
+function playSound3D(audio, x, z) {
+  try {
+    if (!audio._panned) preparePannable(audio);
+    if (!audio._panned) {
+      audio.currentTime = 0;
+      const p = audio.play();
+      if (p) p.catch(() => {});
+      return;
+    }
+    const ctx = audio._panned.ctx;
+    if (ctx.state === 'suspended') ctx.resume();
+
+    // Азимут источника относительно направления камеры
+    camera.getWorldDirection(_soundDir);
+    const dx = x - camera.position.x, dz = z - camera.position.z;
+    const cross = _soundDir.x * dz - _soundDir.z * dx;
+    const dot = _soundDir.x * dx + _soundDir.z * dz;
+    const angle = Math.atan2(cross, dot);
+    if (audio._panned.panner) {
+      audio._panned.panner.pan.value = Math.max(-1, Math.min(1, Math.sin(angle) * 1.2));
+    }
+    // Громкость падает с расстоянием
+    const dist = Math.hypot(dx, dz);
+    audio._panned.gain.gain.value = Math.max(0.3, Math.min(1, 400 / Math.max(60, dist)));
+
+    audio.currentTime = 0;
+    const p = audio.play();
+    if (p) p.catch(() => {});
+  } catch (e) { /* ignore */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -1343,6 +1583,7 @@ function animate() {
 
     syncTanks(players);
     syncBullets(bullets);
+    syncPickups(currentState.pickups, now);
     updateMuzzleFlashes();
     updateExplosions();
     updateParticles(dt, now);
@@ -1350,6 +1591,7 @@ function animate() {
     updateTrackMarks(players, now);
     updateDamageTexts(now);
     updateEngineSound();
+    updateScopeInfo();
     updateCamera(players);
   }
 

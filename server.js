@@ -32,10 +32,70 @@ const BULLET_SPEED = 520;
 const BULLET_RADIUS = 5;
 const BULLET_BASE_DAMAGE = 34;
 const BASE_RELOAD_MS = 2000;
-const RESPAWN_DELAY_MS = 2500;
+const RESPAWN_DELAY_MS = 3500;
+const SPAWN_PROTECT_MS = 3000;
 const MAX_HP = 100;
 const KILLS_FOR_ROULETTE = 3;
 const OBSTACLES = generateObstacles();
+
+// Ранги за килы
+const RANKS = [
+  { kills: 0, name: 'Рядовой' },
+  { kills: 3, name: 'Ефрейтор' },
+  { kills: 6, name: 'Сержант' },
+  { kills: 10, name: 'Лейтенант' },
+  { kills: 15, name: 'Капитан' },
+  { kills: 21, name: 'Майор' },
+  { kills: 28, name: 'Полковник' },
+  { kills: 40, name: 'Генерал' },
+  { kills: 60, name: 'Легенда' },
+];
+
+function rankFor(kills) {
+  let rank = RANKS[0];
+  for (const r of RANKS) if (kills >= r.kills) rank = r;
+  return rank;
+}
+
+// Типы снарядов: 'ap' — бронебойный (сильнее, без разлёта), 'he' — фугас (слабее, по площади)
+const AMMO_AP_DAMAGE = 1.3;
+const AMMO_HE_DAMAGE = 0.7;
+const AMMO_HE_BLAST_RADIUS = 80;
+const AMMO_HE_BLAST_FACTOR = 0.6;
+
+// Бонусы на карте
+const PICKUP_TYPES = [
+  { type: 'heal',  color: '#27ae60', radius: 32 },
+  { type: 'speed', color: '#f1c40f', radius: 32 },
+  { type: 'rapid', color: '#e74c3c', radius: 32 },
+];
+const PICKUP_COUNT = 8;
+const PICKUP_RESPAWN_MS = 10000;
+const PICKUP_POSITIONS = generatePickupPositions();
+
+function generatePickupPositions() {
+  const positions = [];
+  for (let k = 0; k < PICKUP_COUNT; k++) {
+    const x = 200 + Math.random() * (WORLD.width - 400);
+    const z = 200 + Math.random() * (WORLD.depth - 400);
+    const hitsObstacle = OBSTACLES.some(o => circleRectCollision(x, z, 30, o));
+    positions.push({ x, z, hitsObstacle });
+  }
+  return positions;
+}
+
+function getPickupSpot(idx) {
+  const spot = PICKUP_POSITIONS[idx];
+  if (!spot.hitsObstacle) return { x: spot.x, z: spot.z };
+  // перепроверяем и ищем свободное место
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const x = 200 + Math.random() * (WORLD.width - 400);
+    const z = 200 + Math.random() * (WORLD.depth - 400);
+    const hitsObstacle = OBSTACLES.some(o => circleRectCollision(x, z, 30, o));
+    if (!hitsObstacle) return { x, z };
+  }
+  return { x: WORLD.width / 2, z: WORLD.depth / 2 };
+}
 
 // ---------------------------------------------------------------------------
 // РУЛЕТКА СПОСОБНОСТЕЙ (30 штук)
@@ -132,6 +192,13 @@ const players = {};
 const bullets = [];
 let bulletIdCounter = 1;
 
+// Бонусы на карте
+const pickups = [];
+for (let i = 0; i < PICKUP_COUNT; i++) {
+  const p = getPickupSpot(i);
+  pickups.push({ id: i, type: PICKUP_TYPES[i % PICKUP_TYPES.length].type, x: p.x, z: p.z, active: true, respawnAt: 0 });
+}
+
 const TANK_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#ff6fa4'];
 
 function randomColor() {
@@ -186,12 +253,14 @@ function createPlayer(id, nickname, color) {
     alive: true,
     kills: 0,
     deaths: 0,
+    ammo: 'ap',       // тип снаряда: ap / he
     damageMult: 1,
     buffs: {},        // временные способности: id -> { until }
     flags: {},        // пассивные способности: id -> true
     rageKills: 0,     // килы с активной «Яростью»
     jamUntil: 0,      // «Глушитель»: до этого момента нельзя стрелять
-    input: { forward: false, back: false, left: false, right: false, targetTurretAngle: 0, shooting: false },
+    spawnProtectUntil: Date.now() + SPAWN_PROTECT_MS,
+    input: { forward: false, back: false, left: false, right: false, targetTurretAngle: 0, shooting: false, ammo: 'ap' },
     lastShotTime: 0,
     respawnAt: 0,
     killsSinceUpgrade: 0,
@@ -232,6 +301,7 @@ io.on('connection', (socket) => {
     p.input.right = !!input.right;
     if (typeof input.targetTurretAngle === 'number') p.input.targetTurretAngle = input.targetTurretAngle;
     p.input.shooting = !!input.shooting;
+    if (input.ammo === 'he' || input.ammo === 'ap') p.input.ammo = input.ammo;
   });
 
   socket.on('latencyReq', () => socket.emit('latencyRes'));
@@ -263,6 +333,7 @@ function tick() {
         p.z = spawn.z;
         p.hp = p.maxHp;
         p.alive = true;
+        p.spawnProtectUntil = now + SPAWN_PROTECT_MS; // защита на старте
       }
       continue;
     }
@@ -273,7 +344,46 @@ function tick() {
   }
 
   updateBullets(dt, now);
+  updatePickups(now);
   broadcastState();
+}
+
+// Бонусы на карте: появление и подбор
+function updatePickups(now) {
+  for (const pk of pickups) {
+    if (!pk.active) {
+      if (now >= pk.respawnAt) {
+        const spot = getPickupSpot(pk.id);
+        pk.x = spot.x;
+        pk.z = spot.z;
+        pk.active = true;
+      }
+      continue;
+    }
+
+    for (const id in players) {
+      const p = players[id];
+      if (!p.alive) continue;
+      const dx = p.x - pk.x, dz = p.z - pk.z;
+      if (Math.sqrt(dx * dx + dz * dz) < 32) {
+        applyPickup(p, pk.type, now);
+        pk.active = false;
+        pk.respawnAt = now + PICKUP_RESPAWN_MS;
+        io.to(p.id).emit('pickup', { type: pk.type });
+        break;
+      }
+    }
+  }
+}
+
+function applyPickup(p, type, now) {
+  if (type === 'heal') {
+    p.hp = Math.min(p.maxHp, p.hp + 30);
+  } else if (type === 'speed') {
+    p.buffs.speed = { until: now + 5000 };
+  } else if (type === 'rapid') {
+    p.buffs.reload = { until: now + 3000 };
+  }
 }
 
 function updatePlayerMovement(p, dt) {
@@ -387,12 +497,17 @@ function fireBullet(p) {
   if (buffActive(p, 'bulletsp')) speedMult *= 1.3;
   if (buffActive(p, 'overdrive')) speedMult *= 1.15;
 
+  // Тип снаряда: 'ap' — бронебойный, 'he' — фугас
+  const ammo = p.input.ammo || 'ap';
+
   for (const angle of angles) {
     let dmg = BULLET_BASE_DAMAGE * p.damageMult;
     if (buffActive(p, 'damage')) dmg *= 1.5;
     if (buffActive(p, 'overdrive')) dmg *= 1.15;
     if (p.flags.rage) dmg *= 1 + 0.15 * p.rageKills;
     if (buffActive(p, 'crit') && Math.random() < 0.25) dmg *= 2;
+    if (ammo === 'ap') dmg *= AMMO_AP_DAMAGE;
+    if (ammo === 'he') dmg *= AMMO_HE_DAMAGE;
 
     const spawnDist = TANK_RADIUS + 14;
     bullets.push({
@@ -410,7 +525,7 @@ function fireBullet(p) {
       freeze: buffActive(p, 'freeze'),
       burn: buffActive(p, 'burn'),
       jam: buffActive(p, 'jam'),
-      blast: buffActive(p, 'blast'),
+      blast: buffActive(p, 'blast') || ammo === 'he',
     });
   }
 }
@@ -518,9 +633,14 @@ function grantAbility(p, now) {
 
 function dealDamage(target, amount, attackerId, x, z, bullet, now) {
   if (!target.alive) return;
+  if (now < target.spawnProtectUntil) {
+    // защита после возрождения — урон не проходит
+    io.emit('hit', { x: target.x, z: target.z, color: target.color, id: target.id, barrel: false, ownerId: attackerId, damage: 0 });
+    return;
+  }
   if (buffActive(target, 'shield')) {
     // «Неуязвимость» — урон не проходит, но попадание видно
-    io.emit('hit', { x, z, color: target.color, id: target.id, barrel: false, ownerId: attackerId });
+    io.emit('hit', { x, z, color: target.color, id: target.id, barrel: false, ownerId: attackerId, damage: 0 });
     return;
   }
 
@@ -555,7 +675,7 @@ function dealDamage(target, amount, attackerId, x, z, bullet, now) {
   const hz = bullet ? bullet.z : z;
   const barrelHit = Math.hypot(hx - tipX, hz - tipZ) < 16;
 
-  io.emit('hit', { x: target.x, z: target.z, color: attacker ? attacker.color : '#ffffff', id: target.id, barrel: barrelHit, ownerId: attackerId });
+  io.emit('hit', { x: target.x, z: target.z, color: attacker ? attacker.color : '#ffffff', id: target.id, barrel: barrelHit, ownerId: attackerId, damage: Math.round(dmg) });
 
   if (target.hp <= 0) {
     if (target.flags.second) {
@@ -613,6 +733,9 @@ function broadcastState() {
     for (const id in p.flags) {
       effects.push({ id, remainingMs: -1 }); // до конца жизни
     }
+    if (p.alive && now < p.spawnProtectUntil) {
+      effects.push({ id: 'protect', remainingMs: p.spawnProtectUntil - now });
+    }
     return {
       id: p.id,
       nickname: p.nickname,
@@ -627,6 +750,7 @@ function broadcastState() {
       alive: p.alive,
       kills: p.kills,
       deaths: p.deaths,
+      ammo: p.input.ammo,
       effects,
     };
   });
@@ -639,7 +763,9 @@ function broadcastState() {
     ownerId: b.ownerId,
   }));
 
-  io.emit('state', { players: playersState, bullets: bulletsState });
+  const pickupsState = pickups.filter(pk => pk.active).map(pk => ({ id: pk.id, type: pk.type, x: pk.x, z: pk.z }));
+
+  io.emit('state', { players: playersState, bullets: bulletsState, pickups: pickupsState });
 }
 
 setInterval(tick, 1000 / TICK_RATE);

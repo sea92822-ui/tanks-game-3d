@@ -13,6 +13,7 @@
 
   <!-- HUD -->
   <div id="hud">
+    <div id="myRank">Рядовой</div>
     <div id="hpBarWrap">
       <div id="hpBarFill"></div>
       <span id="hpText">100 / 100</span>
@@ -21,9 +22,16 @@
       <div id="reloadBarFill"></div>
       <span id="reloadText">ГОТОВО</span>
     </div>
-    <div id="controlsHint">W/S — вперёд/назад · A/D — поворот · Мышь — прицел башней · ЛКМ — огонь · ПКМ (зажать) — прицел от 1 лица · Q/E — камера · Колесо — зум</div>
+    <div id="controlsHint">W/S — вперёд/назад · A/D — поворот · Мышь — прицел башней · ЛКМ — огонь · ПКМ (зажать) — прицел от 1 лица · Q/E — камера · Колесо — зум · 1/2 — тип снаряда</div>
     <div id="activeEffects"></div>
+    <div id="ammoPanel">
+      <button id="ammoAp" class="ammoBtn active">1 · Бронебойный</button>
+      <button id="ammoHe" class="ammoBtn">2 · Фугас</button>
+    </div>
   </div>
+
+  <!-- Мини-карта -->
+  <canvas id="minimap" width="200" height="200"></canvas>
 
   <!-- Пинг -->
   <div id="pingText">Пинг: —</div>
@@ -56,7 +64,18 @@
       <div class="line horizontal"></div>
       <div class="line vertical"></div>
       <div class="dot"></div>
+      <div class="tick t1"></div>
+      <div class="tick t2"></div>
+      <div class="tick t3"></div>
+      <div class="tick t4"></div>
+      <div class="tick t5"></div>
+      <div class="tick t6"></div>
+      <div class="tick t7"></div>
+      <div class="tick t8"></div>
+      <div class="ring r1"></div>
+      <div class="ring r2"></div>
     </div>
+    <div id="scopeDistance">— м</div>
   </div>
 
   <!-- Экран ввода ника -->
