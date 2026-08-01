@@ -1008,7 +1008,7 @@ let lastTouchEndAt = 0;
 document.addEventListener('touchstart', (e) => {
   document.body.classList.add('touch');
   for (const t of e.changedTouches) {
-    if (t.target.closest('#joyBase, #touchBtns, #settingsPanel, #settingsBtn, #leaderboard, #minimap, #nicknameOverlay')) continue;
+    if (t.target.closest('#joyBase, #touchBtns, #settingsPanel, #settingsBtn, #leaderboard, #nicknameOverlay')) continue;
     touchAimId = t.identifier;
     lastAimX = t.clientX;
     lastAimY = t.clientY;
@@ -1263,51 +1263,6 @@ function syncPickups(pickupsList, now) {
 }
 
 // ---------------------------------------------------------------------------
-// МИНИ-КАРТА
-// ---------------------------------------------------------------------------
-const minimap = document.getElementById('minimap');
-const mmCtx = minimap.getContext('2d');
-const MM_SCALE = 10; // 2000 юнитов мира / 200 px карты
-let lastMMDraw = 0;
-
-function drawMinimap() {
-  const now = Date.now();
-  if (now - lastMMDraw < 50) return; // ~20 кадров/сек
-  lastMMDraw = now;
-
-  const W = minimap.width, H = minimap.height;
-  mmCtx.clearRect(0, 0, W, H);
-  mmCtx.fillStyle = 'rgba(10, 16, 10, 0.85)';
-  mmCtx.fillRect(0, 0, W, H);
-
-  // Препятствия
-  mmCtx.fillStyle = 'rgba(150, 150, 150, 0.9)';
-  obstaclesData.forEach(o => mmCtx.fillRect(o.x / MM_SCALE, o.z / MM_SCALE, o.w / MM_SCALE, o.d / MM_SCALE));
-
-  // Бонусы
-  (currentState.pickups || []).forEach(pk => {
-    mmCtx.fillStyle = pk.type === 'heal' ? '#27ae60' : pk.type === 'speed' ? '#f1c40f' : '#e74c3c';
-    mmCtx.fillRect(pk.x / MM_SCALE - 2, pk.z / MM_SCALE - 2, 4, 4);
-  });
-
-  // Игроки
-  currentState.players.forEach(p => {
-    const sx = p.x / MM_SCALE, sz = p.z / MM_SCALE;
-    mmCtx.fillStyle = p.id === selfId ? '#ffffff' : p.color;
-    mmCtx.beginPath();
-    mmCtx.arc(sx, sz, p.id === selfId ? 3.5 : 3, 0, Math.PI * 2);
-    mmCtx.fill();
-    if (p.id === selfId) {
-      mmCtx.strokeStyle = '#ffffff';
-      mmCtx.lineWidth = 1.5;
-      mmCtx.beginPath();
-      mmCtx.moveTo(sx, sz);
-      mmCtx.lineTo(sx + Math.sin(p.chassisAngle) * 9, sz + Math.cos(p.chassisAngle) * 9);
-      mmCtx.stroke();
-    }
-  });
-}
-
 // ---------------------------------------------------------------------------
 // ПРИЦЕЛ ОТ ПЕРВОГО ЛИЦА: сетка и дистанция до цели
 // ---------------------------------------------------------------------------
@@ -1396,7 +1351,6 @@ function updateHUD() {
 
   updateActiveEffects(me.effects || []);
   updateMyRank(me);
-  drawMinimap();
 }
 
 // ---------------------------------------------------------------------------
@@ -1847,19 +1801,29 @@ function syncTanks(players) {
 }
 
 // ---------------------------------------------------------------------------
-// ОБЛОМКИ ВЗОРВАННЫХ ТАНКОВ (не исчезают)
+// ОБЛОМКИ ВЗОРВАННЫХ ТАНКОВ (не исчезают, но живут 30 сек)
 // ---------------------------------------------------------------------------
 const wrecks = [];
 const MAX_WRECKS = 15;
+const WRECK_LIFE_MS = 30000;
 
 function keepAsWreck(mesh) {
-  // Старые обломки убираем, чтобы карта не засорялась
-  while (wrecks.length >= MAX_WRECKS) {
-    const old = wrecks.shift();
-    scene.remove(old);
-    old.traverse(o => { if (o.isMesh) { o.geometry.dispose?.(); o.material.dispose?.(); } });
-  }
-  wrecks.push(mesh);
+  wrecks.push({ mesh, born: performance.now() });
+}
+
+function removeWreck(i) {
+  const w = wrecks[i];
+  scene.remove(w.mesh);
+  w.mesh.traverse(o => { if (o.isMesh) { o.geometry.dispose?.(); o.material.dispose?.(); } });
+  wreckedTimers.delete(w.mesh.id);
+  wrecks.splice(i, 1);
+}
+
+// Старые обломки убираем раз в кадр: по времени и по лимиту
+function updateWreckCleanup() {
+  const now = performance.now();
+  while (wrecks.length && now - wrecks[0].born > WRECK_LIFE_MS) removeWreck(0);
+  while (wrecks.length > MAX_WRECKS) removeWreck(0);
 }
 
 function syncBullets(bullets) {
@@ -2310,7 +2274,7 @@ function updateWreckedFires(now, dt) {
   if (!settingsState.effects) return;
   const sources = [];
   tankMeshes.forEach(m => { if (m.userData.wrecked) sources.push(m); });
-  wrecks.forEach(m => sources.push(m));
+  wrecks.forEach(w => sources.push(w.mesh));
 
   for (const mesh of sources) {
     let t = wreckedTimers.get(mesh.id) || 0;
@@ -2597,6 +2561,7 @@ function animate() {
     emitTrackDust(players, dt);
     emitExhaust(players, dt);
     updateWreckedFires(now, dt);
+    updateWreckCleanup();
     updateClouds(dt);
     updateScopeInfo();
     updateArtilleryVisuals(now);

@@ -140,20 +140,6 @@ html, body {
   filter: brightness(1.2);
 }
 
-/* ---------- Мини-карта ---------- */
-#minimap {
-  position: fixed;
-  top: 16px;
-  right: 16px;
-  width: 200px;
-  height: 200px;
-  border: 2px solid rgba(255,255,255,0.3);
-  border-radius: 12px;
-  z-index: 15;
-  pointer-events: none;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
-}
-
 #reloadBarWrap {
   width: 240px;
   height: 14px;
@@ -187,7 +173,7 @@ html, body {
 /* ---------- Leaderboard ---------- */
 #leaderboard {
   position: fixed;
-  top: 228px; /* ниже мини-карты (200px + отступы) */
+  top: 16px;
   right: 20px;
   z-index: 10;
   background: rgba(0,0,0,0.55);
