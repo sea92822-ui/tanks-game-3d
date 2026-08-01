@@ -354,7 +354,13 @@ function updateBullets(dt, now) {
 
 function applyDamage(target, bullet, now) {
   target.hp -= bullet.damage;
-  io.emit('hit', { x: target.x, z: target.z, color: bullet.ownerColor });
+
+  // Попадание в дуло? (кончик дула в 34 юнитах по направлению башни)
+  const tipX = target.x + Math.sin(target.turretAngle) * 34;
+  const tipZ = target.z + Math.cos(target.turretAngle) * 34;
+  const barrelHit = Math.hypot(bullet.x - tipX, bullet.z - tipZ) < 16;
+
+  io.emit('hit', { x: target.x, z: target.z, color: bullet.ownerColor, id: target.id, barrel: barrelHit });
   if (target.hp <= 0) {
     target.alive = false;
     target.deaths += 1;

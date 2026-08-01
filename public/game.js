@@ -156,6 +156,7 @@ function createTankMesh(color) {
   turretPivot.add(barrel);
 
   group.userData.turretPivot = turretPivot;
+  group.userData.barrel = barrel;
   group.userData.barrelTipLocal = new THREE.Vector3(0, 18, 34); // точка для камеры прицела
 
   return group;
@@ -229,6 +230,7 @@ function connectToServer(nickname) {
 
   socket.on('hit', (data) => {
     spawnExplosion(data.x, data.z);
+    if (data.barrel) breakOffBarrel(data.id);
   });
 }
 
@@ -532,8 +534,24 @@ function syncTanks(players) {
       tankMeshes.set(p.id, mesh);
     }
 
-    mesh.visible = p.alive;
-    if (!p.alive) return;
+    if (!p.alive) {
+      // Уничтожен: корпус остаётся обломком, башня уже взлетела
+      if (!mesh.userData.wrecked) {
+        mesh.userData.wrecked = true;
+        destroyTank(mesh);
+      }
+      return;
+    }
+
+    // Возродился — пересоздаём целый танк
+    if (mesh.userData.wrecked) {
+      scene.remove(mesh);
+      mesh.traverse(o => { if (o.isMesh) { o.geometry.dispose?.(); o.material.dispose?.(); } });
+      tankMeshes.delete(p.id);
+      mesh = createTankMesh(p.color);
+      scene.add(mesh);
+      tankMeshes.set(p.id, mesh);
+    }
 
     mesh.position.set(p.x, 0, p.z);
     mesh.rotation.y = p.chassisAngle;
@@ -657,6 +675,73 @@ function updateExplosions() {
   }
 }
 
+// Отлетающие части (дуло, башня): простейшая физика с гравитацией
+const flyingBits = [];
+const BIT_LIFE_MS = 6000;
+
+function launchBit(mesh, power) {
+  flyingBits.push({
+    mesh,
+    vx: (Math.random() - 0.5) * power,
+    vy: 60 + Math.random() * power * 0.6,
+    vz: (Math.random() - 0.5) * power,
+    spinX: (Math.random() - 0.5) * 8,
+    spinY: (Math.random() - 0.5) * 8,
+    born: performance.now(),
+  });
+}
+
+function updateFlyingBits(dt, now) {
+  for (let i = flyingBits.length - 1; i >= 0; i--) {
+    const f = flyingBits[i];
+    f.vy -= 110 * dt;
+    f.mesh.position.x += f.vx * dt;
+    f.mesh.position.y += f.vy * dt;
+    f.mesh.position.z += f.vz * dt;
+    f.mesh.rotation.x += f.spinX * dt;
+    f.mesh.rotation.y += f.spinY * dt;
+    if (f.mesh.position.y <= 0) {
+      f.mesh.position.y = 0;
+      f.vy = 0; f.vx = 0; f.vz = 0;
+    }
+    if (now - f.born > BIT_LIFE_MS) {
+      scene.remove(f.mesh);
+      f.mesh.traverse(o => { if (o.isMesh) { o.geometry.dispose?.(); o.material.dispose?.(); } });
+      flyingBits.splice(i, 1);
+    }
+  }
+}
+
+function breakOffPart(part) {
+  part.updateWorldMatrix(true, false);
+  const wp = new THREE.Vector3();
+  const wq = new THREE.Quaternion();
+  part.getWorldPosition(wp);
+  part.getWorldQuaternion(wq);
+  part.parent.remove(part);
+  scene.add(part);
+  part.position.copy(wp);
+  part.quaternion.copy(wq);
+  return part;
+}
+
+function breakOffBarrel(tankId) {
+  const mesh = tankMeshes.get(tankId);
+  if (!mesh || mesh.userData.wrecked) return;
+  const barrel = mesh.userData.barrel;
+  if (!barrel || barrel.parent !== mesh.userData.turretPivot) return;
+  launchBit(breakOffPart(barrel), 40);
+}
+
+function destroyTank(mesh) {
+  // Башня (с дулом) взлетает и падает отдельно
+  launchBit(breakOffPart(mesh.userData.turretPivot), 90);
+  // Корпус остаётся обломком — подпаливаем
+  mesh.children.forEach(child => {
+    if (child.isMesh) child.material.color.set(0x4a4a4a);
+  });
+}
+
 // Звук выстрела
 const shotSound = new Audio('vystrel-tanka.mp3');
 shotSound.preload = 'auto';
@@ -751,6 +836,10 @@ function updateCamera(players) {
 function animate() {
   requestAnimationFrame(animate);
 
+  const now = performance.now();
+  const dt = Math.min((now - lastFrameTime) / 1000, 0.1);
+  lastFrameTime = now;
+
   if (selfId) {
     const players = getInterpolatedPlayers();
     const bullets = getInterpolatedBullets();
@@ -759,10 +848,12 @@ function animate() {
     syncBullets(bullets);
     updateMuzzleFlashes();
     updateExplosions();
+    updateFlyingBits(dt, now);
     updateCamera(players);
   }
 
   renderer.render(scene, camera);
 }
 
+let lastFrameTime = performance.now();
 animate();
