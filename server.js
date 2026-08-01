@@ -369,6 +369,7 @@ function broadcastState() {
     x: b.x,
     z: b.z,
     color: b.ownerColor,
+    ownerId: b.ownerId,
   }));
 
   io.emit('state', { players: playersState, bullets: bulletsState });

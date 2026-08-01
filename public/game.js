@@ -319,10 +319,14 @@ setInterval(() => {
 // ---------------------------------------------------------------------------
 const hpBarFill = document.getElementById('hpBarFill');
 const hpText = document.getElementById('hpText');
+let lastHp = null;
 
 function updateHUD() {
   const me = currentState.players.find(p => p.id === selfId);
   if (!me) return;
+
+  if (lastHp !== null && me.hp < lastHp) addShake(1.6); // попали — трясём камеру
+  lastHp = me.hp;
 
   const pct = Math.max(0, me.hp / me.maxHp) * 100;
   hpBarFill.style.width = pct + '%';
@@ -499,6 +503,8 @@ function syncBullets(bullets) {
       mesh = new THREE.Mesh(bulletGeo, mat);
       scene.add(mesh);
       bulletMeshes.set(b.id, mesh);
+      spawnMuzzleFlash(b.x, b.z);
+      if (b.ownerId === selfId) addShake(0.6); // отдача при своём выстреле
     }
 
     mesh.position.set(b.x, 18, b.z);
@@ -518,6 +524,42 @@ let sharedBulletGeo = null;
 function getSharedBulletGeometry() {
   if (!sharedBulletGeo) sharedBulletGeo = new THREE.SphereGeometry(5, 8, 8);
   return sharedBulletGeo;
+}
+
+// ---------------------------------------------------------------------------
+// ЭФФЕКТ ВЫСТРЕЛА: вспышка у дула + тряска камеры
+// ---------------------------------------------------------------------------
+const muzzleFlashes = [];
+const flashGeo = new THREE.SphereGeometry(6, 8, 8);
+const flashMat = new THREE.MeshBasicMaterial({ color: 0xffd75e, transparent: true });
+const FLASH_LIFE_MS = 90;
+
+function spawnMuzzleFlash(x, z) {
+  const mesh = new THREE.Mesh(flashGeo, flashMat.clone());
+  mesh.position.set(x, 18, z);
+  scene.add(mesh);
+  muzzleFlashes.push({ mesh, born: performance.now() });
+}
+
+function updateMuzzleFlashes() {
+  const now = performance.now();
+  for (let i = muzzleFlashes.length - 1; i >= 0; i--) {
+    const f = muzzleFlashes[i];
+    const age = now - f.born;
+    if (age > FLASH_LIFE_MS) {
+      scene.remove(f.mesh);
+      f.mesh.material.dispose();
+      muzzleFlashes.splice(i, 1);
+      continue;
+    }
+    f.mesh.material.opacity = 1 - age / FLASH_LIFE_MS;
+    f.mesh.scale.setScalar(1 + age * 0.06);
+  }
+}
+
+let shake = 0;
+function addShake(amount) {
+  shake = Math.min(6, shake + amount);
 }
 
 // ---------------------------------------------------------------------------
@@ -570,6 +612,17 @@ function updateCamera(players) {
     camLookTarget.lerp(new THREE.Vector3(me.x, 12, me.z), 0.15);
     camera.lookAt(camLookTarget);
   }
+
+  // Тряска камеры (затухает со временем)
+  if (shake > 0.01) {
+    const k = shake;
+    camera.position.x += (Math.random() - 0.5) * k;
+    camera.position.y += (Math.random() - 0.5) * k * 0.5;
+    camera.position.z += (Math.random() - 0.5) * k;
+    shake *= 0.86;
+  } else {
+    shake = 0;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -584,6 +637,7 @@ function animate() {
 
     syncTanks(players);
     syncBullets(bullets);
+    updateMuzzleFlashes();
     updateCamera(players);
   }
 
