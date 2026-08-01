@@ -131,6 +131,7 @@ function initSettingsUI() {
     saveGraphicsSettings();
     shotSound.volume = settingsState.volume;
     explosionSound.volume = settingsState.volume;
+    penetrationSound.volume = settingsState.volume;
     engineIdleSound.volume = settingsState.volume * 0.25;
     engineMoveSound.volume = settingsState.volume * 0.5;
   });
@@ -353,6 +354,7 @@ function connectToServer(nickname, color) {
 
   socket.on('hit', (data) => {
     spawnExplosion(data.x, data.z);
+    playPenetrationSound();
     if (data.barrel) breakOffBarrel(data.id);
   });
 
@@ -1097,6 +1099,20 @@ const explosionSound = new Audio('explosion.mp3');
 explosionSound.preload = 'auto';
 explosionSound.load();
 explosionSound.volume = settingsState.volume;
+
+// Звук пробития танка
+const penetrationSound = new Audio('penetration.mp3');
+penetrationSound.preload = 'auto';
+penetrationSound.load();
+penetrationSound.volume = settingsState.volume;
+
+function playPenetrationSound() {
+  try {
+    penetrationSound.currentTime = 0;
+    const p = penetrationSound.play();
+    if (p) p.catch(() => {});
+  } catch (e) { /* ignore */ }
+}
 
 function unlockAudio() {
   const p = shotSound.play();
