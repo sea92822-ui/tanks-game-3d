@@ -1119,14 +1119,11 @@ function updateEngineSound() {
   const moving = keys.forward || keys.back;
   if (moving && !engineMoving) {
     engineMoving = true;
-    engineIdleSound.pause();
     const p = engineMoveSound.play();
     if (p) p.catch(() => {});
   } else if (!moving && engineMoving) {
     engineMoving = false;
     engineMoveSound.pause();
-    const e = engineIdleSound.play();
-    if (e) e.catch(() => {});
   }
 }
 
