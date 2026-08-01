@@ -1180,10 +1180,9 @@ function syncTanks(players) {
       return;
     }
 
-    // Возродился — пересоздаём целый танк
+    // Возродился — обломок остаётся на карте, создаём новый танк
     if (mesh.userData.wrecked) {
-      scene.remove(mesh);
-      mesh.traverse(o => { if (o.isMesh) { o.geometry.dispose?.(); o.material.dispose?.(); } });
+      keepAsWreck(mesh);
       tankMeshes.delete(p.id);
       mesh = createTankMesh(p.color);
       scene.add(mesh);
@@ -1208,7 +1207,13 @@ function syncTanks(players) {
   // Удаляем меши отключившихся игроков и их эффекты
   for (const [id, mesh] of tankMeshes) {
     if (!seenIds.has(id)) {
-      scene.remove(mesh);
+      if (mesh.userData.wrecked) {
+        // обломок разорвавшегося игрока остаётся на карте
+        keepAsWreck(mesh);
+      } else {
+        scene.remove(mesh);
+        mesh.traverse(o => { if (o.isMesh) { o.geometry.dispose?.(); o.material.dispose?.(); } });
+      }
       tankMeshes.delete(id);
       playerDustTimers.delete(id);
       prevPlayerPos.delete(id);
@@ -1217,6 +1222,22 @@ function syncTanks(players) {
       wreckedTimers.delete(id);
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// ОБЛОМКИ ВЗОРВАННЫХ ТАНКОВ (не исчезают)
+// ---------------------------------------------------------------------------
+const wrecks = [];
+const MAX_WRECKS = 15;
+
+function keepAsWreck(mesh) {
+  // Старые обломки убираем, чтобы карта не засорялась
+  while (wrecks.length >= MAX_WRECKS) {
+    const old = wrecks.shift();
+    scene.remove(old);
+    old.traverse(o => { if (o.isMesh) { o.geometry.dispose?.(); o.material.dispose?.(); } });
+  }
+  wrecks.push(mesh);
 }
 
 function syncBullets(bullets) {
@@ -1663,12 +1684,15 @@ const wreckedTimers = new Map();
 
 function updateWreckedFires(now, dt) {
   if (!settingsState.effects) return;
-  tankMeshes.forEach((mesh, id) => {
-    if (!mesh.userData.wrecked) return;
-    let t = wreckedTimers.get(id) || 0;
+  const sources = [];
+  tankMeshes.forEach(m => { if (m.userData.wrecked) sources.push(m); });
+  wrecks.forEach(m => sources.push(m));
+
+  for (const mesh of sources) {
+    let t = wreckedTimers.get(mesh.id) || 0;
     t -= dt;
-    if (t > 0) { wreckedTimers.set(id, t); return; }
-    wreckedTimers.set(id, 0.12);
+    if (t > 0) { wreckedTimers.set(mesh.id, t); continue; }
+    wreckedTimers.set(mesh.id, 0.12);
 
     const px = mesh.position.x + (Math.random() - 0.5) * 10;
     const pz = mesh.position.z + (Math.random() - 0.5) * 10;
@@ -1706,7 +1730,7 @@ function updateWreckedFires(now, dt) {
         life: 350 + Math.random() * 200,
       });
     }
-  });
+  }
 }
 
 // Звук выстрела
