@@ -1146,6 +1146,7 @@ function syncBullets(bullets) {
         lastShotAt = Date.now();
         const me = tankMeshes.get(selfId);
         if (me) me.userData.recoil = 7; // дуло отталкивается назад
+        spawnMuzzleSmoke(b.x, b.z); // дым вокруг танка после выстрела
       }
     }
 
@@ -1191,6 +1192,26 @@ function spawnMuzzleFlash(x, z) {
   muzzleFlashes.push({ mesh, born: performance.now() });
   muzzleLight.position.set(x, 26, z);
   muzzleLight.intensity = 3;
+}
+
+// Дым вокруг танка после выстрела
+function spawnMuzzleSmoke(x, z) {
+  if (!settingsState.effects) return;
+  for (let i = 0; i < 5; i++) {
+    const mat = new THREE.MeshBasicMaterial({ color: 0x9a9a9a, transparent: true });
+    const mesh = new THREE.Mesh(particleGeo, mat);
+    mesh.scale.setScalar(2.5 + Math.random() * 3);
+    mesh.position.set(x + (Math.random() - 0.5) * 16, 15 + Math.random() * 8, z + (Math.random() - 0.5) * 16);
+    scene.add(mesh);
+    particles.push({
+      mesh,
+      vx: (Math.random() - 0.5) * 45,
+      vy: 18 + Math.random() * 22,
+      vz: (Math.random() - 0.5) * 45,
+      born: performance.now(),
+      life: 800 + Math.random() * 400,
+    });
+  }
 }
 
 function updateMuzzleFlashes() {
