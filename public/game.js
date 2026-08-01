@@ -297,35 +297,171 @@ function createTankMesh(color) {
 
   const bodyMat = new THREE.MeshStandardMaterial({ color, metalness: 0.75, roughness: 0.28 }); // блик от солнца
   const darkMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.5, roughness: 0.5 });
+  const rubberMat = new THREE.MeshStandardMaterial({ color: 0x101010, metalness: 0.1, roughness: 0.95 });
 
-  // Корпус
-  const body = new THREE.Mesh(new THREE.BoxGeometry(28, 14, 40), bodyMat);
-  body.position.y = 10;
-  body.castShadow = true;
-  group.add(body);
-
-  // Гусеницы (декоративные)
+  // --- Гусеницы и ходовая часть ---
   [-1, 1].forEach(side => {
-    const track = new THREE.Mesh(new THREE.BoxGeometry(6, 10, 44), darkMat);
-    track.position.set(side * 15, 7, 0);
-    track.castShadow = true;
-    group.add(track);
+    // Резиновая лента
+    const band = new THREE.Mesh(new THREE.BoxGeometry(7, 11.5, 47), rubberMat);
+    band.position.set(side * 15, 7, 0);
+    band.castShadow = true;
+    band.receiveShadow = true;
+    group.add(band);
+
+    // Опорные катки (5 штук)
+    for (let i = 0; i < 5; i++) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.2, 7.6, 14), darkMat);
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(side * 15, 7, -18 + i * 9);
+      wheel.castShadow = true;
+      group.add(wheel);
+    }
+    // Ведущее колесо (спереди) и ленивец (сзади)
+    [-20, 20].forEach((z, i) => {
+      const big = new THREE.Mesh(new THREE.CylinderGeometry(i === 1 ? 5.4 : 4.8, i === 1 ? 5.4 : 4.8, 7.6, 14), darkMat);
+      big.rotation.z = Math.PI / 2;
+      big.position.set(side * 15, 7, z);
+      big.castShadow = true;
+      group.add(big);
+    });
+
+    // Бортовой экран (тонкая пластина над гусеницей)
+    const skirt = new THREE.Mesh(new THREE.BoxGeometry(0.8, 5.5, 44), darkMat);
+    skirt.position.set(side * 12.2, 10, 0);
+    skirt.castShadow = true;
+    group.add(skirt);
+
+    // Надгусеничная полка
+    const fender = new THREE.Mesh(new THREE.BoxGeometry(5, 1, 44), bodyMat);
+    fender.position.set(side * 13.5, 12.9, 0);
+    fender.castShadow = true;
+    group.add(fender);
   });
 
-  // Башня (вращается независимо от корпуса) — отдельная группа-пивот
+  // --- Корпус ---
+  // Нижняя часть
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(28, 9, 40), bodyMat);
+  hull.position.y = 7.5;
+  hull.castShadow = true;
+  hull.receiveShadow = true;
+  group.add(hull);
+
+  // Верхняя плита
+  const upper = new THREE.Mesh(new THREE.BoxGeometry(24, 4, 30), bodyMat);
+  upper.position.y = 13;
+  upper.castShadow = true;
+  group.add(upper);
+
+  // Наклонный лобовой лист (гласис)
+  const glacis = new THREE.Mesh(new THREE.BoxGeometry(24, 5, 8), bodyMat);
+  glacis.rotation.x = -0.45;
+  glacis.position.set(0, 12.8, 16.5);
+  glacis.castShadow = true;
+  group.add(glacis);
+
+  // Наклонная кормовая плита
+  const rearPlate = new THREE.Mesh(new THREE.BoxGeometry(24, 4, 6), bodyMat);
+  rearPlate.rotation.x = 0.3;
+  rearPlate.position.set(0, 13.2, -16);
+  rearPlate.castShadow = true;
+  group.add(rearPlate);
+
+  // Выхлопные трубы (корма)
+  [-6, 6].forEach(x => {
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 3, 8), darkMat);
+    pipe.rotation.x = Math.PI / 2;
+    pipe.position.set(x, 9, -20.5);
+    pipe.castShadow = true;
+    group.add(pipe);
+  });
+
+  // Фары (перед)
+  [-8, 8].forEach(x => {
+    const lamp = new THREE.Mesh(
+      new THREE.BoxGeometry(2, 2, 1.5),
+      new THREE.MeshStandardMaterial({ color: 0xfff6c8, emissive: 0xffe28a, emissiveIntensity: 0.7, metalness: 0.3, roughness: 0.4 })
+    );
+    lamp.position.set(x, 12.5, 20.5);
+    group.add(lamp);
+  });
+
+  // Буксирные крюки
+  [-9, 9].forEach(x => {
+    const hook = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.8, 1.8), darkMat);
+    hook.position.set(x, 4.5, 20.8);
+    group.add(hook);
+  });
+
+  // --- Башня (вращается независимо от корпуса) ---
   const turretPivot = new THREE.Group();
   turretPivot.position.y = 17;
   group.add(turretPivot);
 
-  const turret = new THREE.Mesh(new THREE.CylinderGeometry(11, 13, 12, 16), bodyMat);
-  turret.rotation.y = 0;
-  turret.castShadow = true;
-  turretPivot.add(turret);
+  // Основание башни — скошенный цилиндр
+  const turretBase = new THREE.Mesh(new THREE.CylinderGeometry(11, 13, 8, 16), bodyMat);
+  turretBase.castShadow = true;
+  turretPivot.add(turretBase);
 
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 30, 12), darkMat);
-  barrel.rotation.x = Math.PI / 2;
+  // Скошенная средняя часть
+  const turretMid = new THREE.Mesh(new THREE.CylinderGeometry(9.5, 11, 5, 16), bodyMat);
+  turretMid.position.y = 6.5;
+  turretMid.castShadow = true;
+  turretPivot.add(turretMid);
+
+  // Купол башни
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(10.5, 14, 10), bodyMat);
+  dome.scale.y = 0.5;
+  dome.position.y = 10;
+  dome.castShadow = true;
+  turretPivot.add(dome);
+
+  // Командирская башенка и люк
+  const cupola = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.8, 3, 10), darkMat);
+  cupola.position.y = 13.5;
+  cupola.castShadow = true;
+  turretPivot.add(cupola);
+  const hatch = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 0.9, 10), bodyMat);
+  hatch.position.y = 15.4;
+  turretPivot.add(hatch);
+
+  // Пулемёт на башенке
+  const mg = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 5, 8), darkMat);
+  mg.rotation.x = Math.PI / 2;
+  mg.position.set(4, 14, 4);
+  turretPivot.add(mg);
+
+  // Антенна
+  const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 13, 6), darkMat);
+  antenna.position.set(-6, 16, -4);
+  turretPivot.add(antenna);
+
+  // ЗИП-ящик на корме башни
+  const stowage = new THREE.Mesh(new THREE.BoxGeometry(7, 3.5, 5), darkMat);
+  stowage.position.set(0, 7.5, -12);
+  stowage.castShadow = true;
+  turretPivot.add(stowage);
+
+  // --- Дуло (группа: ствол + дульный тормоз + казённик) ---
+  const barrel = new THREE.Group();
   barrel.position.set(0, 1, 20); // дуло смотрит по +Z (вперёд), сдвинуто вперёд от центра
-  barrel.castShadow = true;
+
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.6, 26, 12), darkMat);
+  tube.rotation.x = Math.PI / 2;
+  tube.castShadow = true;
+  barrel.add(tube);
+
+  // Дульный тормоз на конце ствола
+  const muzzleBrake = new THREE.Mesh(new THREE.CylinderGeometry(3, 2.8, 4.5, 10), darkMat);
+  muzzleBrake.rotation.x = Math.PI / 2;
+  muzzleBrake.position.z = 14.5;
+  barrel.add(muzzleBrake);
+
+  // Казённик у башни
+  const breech = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.6, 4, 12), darkMat);
+  breech.rotation.x = Math.PI / 2;
+  breech.position.z = -10;
+  barrel.add(breech);
+
   turretPivot.add(barrel);
 
   group.userData.turretPivot = turretPivot;
