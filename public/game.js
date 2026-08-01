@@ -504,7 +504,10 @@ function syncBullets(bullets) {
       scene.add(mesh);
       bulletMeshes.set(b.id, mesh);
       spawnMuzzleFlash(b.x, b.z);
-      if (b.ownerId === selfId) addShake(0.35); // отдача при своём выстреле
+      if (b.ownerId === selfId) {
+        addShake(0.35); // отдача при своём выстреле
+        playShotSound();
+      }
     }
 
     mesh.position.set(b.x, 18, b.z);
@@ -561,6 +564,14 @@ let shake = 0;
 let shakeTime = 0;
 function addShake(amount) {
   shake = Math.min(3, shake + amount);
+}
+
+// Звук выстрела
+const shotSound = new Audio('vystrel-tanka.mp3');
+shotSound.volume = 0.6;
+function playShotSound() {
+  shotSound.currentTime = 0;
+  shotSound.play().catch(() => {});
 }
 
 // ---------------------------------------------------------------------------
