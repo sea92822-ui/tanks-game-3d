@@ -12,14 +12,14 @@ const sceneContainer = document.getElementById('sceneContainer');
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x8fc1e0);
-scene.fog = new THREE.Fog(0x8fc1e0, 400, 1600);
 
 const NORMAL_FOV = 65;
 const SCOPE_FOV = 20;
 const camera = new THREE.PerspectiveCamera(NORMAL_FOV, window.innerWidth / window.innerHeight, 0.1, 3000);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75)); // ограничиваем нагрузку на retina-экранах
 renderer.shadowMap.enabled = true;
 sceneContainer.appendChild(renderer.domElement);
 
@@ -83,11 +83,33 @@ function buildGround() {
 }
 
 function buildObstacles() {
-  const mat = new THREE.MeshStandardMaterial({ color: 0x6b6b6b });
-  const height = 40;
   obstaclesData.forEach(o => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(o.w, height, o.d), mat);
-    mesh.position.set(o.x + o.w / 2, height / 2, o.z + o.d / 2);
+    let mesh;
+
+    if (o.type === 'rock') {
+      const r = Math.max(o.w, o.d) * 0.45;
+      mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), new THREE.MeshStandardMaterial({ color: 0x8a8a8a }));
+      mesh.position.set(o.x + o.w / 2, r * 0.7, o.z + o.d / 2);
+      mesh.rotation.y = Math.random() * Math.PI;
+      mesh.scale.y = 0.75;
+    } else if (o.type === 'crate') {
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(o.w, 16, o.d), new THREE.MeshStandardMaterial({ color: 0xa0522d }));
+      mesh.position.set(o.x + o.w / 2, 8, o.z + o.d / 2);
+    } else if (o.type === 'tree') {
+      const tree = new THREE.Group();
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(2, 3.5, 14, 8), new THREE.MeshStandardMaterial({ color: 0x6b4a2b }));
+      trunk.position.y = 7;
+      tree.add(trunk);
+      const crown = new THREE.Mesh(new THREE.SphereGeometry(10, 8, 8), new THREE.MeshStandardMaterial({ color: 0x2f8a3c }));
+      crown.position.y = 20;
+      tree.add(crown);
+      tree.position.set(o.x + o.w / 2, 0, o.z + o.d / 2);
+      mesh = tree;
+    } else {
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(o.w, 40, o.d), new THREE.MeshStandardMaterial({ color: 0x6b6b6b }));
+      mesh.position.set(o.x + o.w / 2, 20, o.z + o.d / 2);
+    }
+
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
@@ -374,8 +396,12 @@ function updateHUD() {
 // Лидерборд
 // ---------------------------------------------------------------------------
 const leaderboardList = document.getElementById('leaderboardList');
+let lastLeaderboardRender = 0;
 
 function updateLeaderboard() {
+  const now = Date.now();
+  if (now - lastLeaderboardRender < 200) return; // не чаще 5 раз/сек
+  lastLeaderboardRender = now;
   const sorted = [...currentState.players].sort((a, b) => b.kills - a.kills).slice(0, 10);
   leaderboardList.innerHTML = sorted.map(p => `
     <li class="${p.id === selfId ? 'me' : ''}">
@@ -655,6 +681,8 @@ function playShotSound() {
 // ---------------------------------------------------------------------------
 const chaseCamOffset = new THREE.Vector3(0, 0, 0);
 const camLookTarget = new THREE.Vector3(0, 12, 0);
+const _camDesired = new THREE.Vector3();
+const _camTarget = new THREE.Vector3();
 let currentFov = NORMAL_FOV;
 
 function updateCamera(players) {
@@ -691,14 +719,15 @@ function updateCamera(players) {
     // --- Камера от третьего лица: орбита вокруг танка (Q/E + колесо) ---
     if (keys.camLeft) camOrbit += 0.05;
     if (keys.camRight) camOrbit -= 0.05;
-    const desired = new THREE.Vector3(
+    _camDesired.set(
       me.x - Math.sin(me.chassisAngle + camOrbit) * camDist,
       camHeight,
       me.z - Math.cos(me.chassisAngle + camOrbit) * camDist
     );
-    camera.position.lerp(desired, 0.12);
+    camera.position.lerp(_camDesired, 0.12);
 
-    camLookTarget.lerp(new THREE.Vector3(me.x, 12, me.z), 0.15);
+    _camTarget.set(me.x, 12, me.z);
+    camLookTarget.lerp(_camTarget, 0.15);
     camera.lookAt(camLookTarget);
   }
 

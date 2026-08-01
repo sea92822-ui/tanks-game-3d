@@ -47,20 +47,51 @@ const UPGRADE_POOL = [
 ];
 
 function generateObstacles() {
-  // Прямоугольные препятствия в плоскости X/Z (w — по X, d — по Z)
   const list = [];
-  const cols = 5, rows = 5;
+
+  // Крупные блоки и скалы (сетка 7x7, шахматный порядок)
+  const cols = 7, rows = 7;
   for (let i = 0; i < cols; i++) {
     for (let j = 0; j < rows; j++) {
       if ((i + j) % 2 === 0) continue;
-      if (i === 2 && j === 2) continue; // центр свободен
-      const w = 90 + Math.random() * 60;
-      const d = 90 + Math.random() * 60;
+      if (i === 3 && j === 3) continue; // центр свободен
+      const w = 80 + Math.random() * 50;
+      const d = 80 + Math.random() * 50;
       const x = 150 + i * (WORLD.width - 300) / (cols - 1) - w / 2;
       const z = 150 + j * (WORLD.depth - 300) / (rows - 1) - d / 2;
-      list.push({ x, z, w, d });
+      list.push({ x, z, w, d, type: Math.random() < 0.5 ? 'box' : 'rock' });
     }
   }
+
+  // Разбросанные ящики
+  for (let k = 0; k < 30; k++) {
+    const w = 28 + Math.random() * 18;
+    const d = 28 + Math.random() * 18;
+    const x = 150 + Math.random() * (WORLD.width - 300 - w);
+    const z = 150 + Math.random() * (WORLD.depth - 300 - d);
+    const overlaps = list.some(o =>
+      x < o.x + o.w + 6 && x + w > o.x - 6 &&
+      z < o.z + o.d + 6 && z + d > o.z - 6
+    );
+    if (overlaps) continue;
+    list.push({ x, z, w, d, type: 'crate' });
+  }
+
+  // Деревья (с коллизией)
+  let trees = 0, attempts = 500;
+  while (trees < 60 && attempts-- > 0) {
+    const s = 14;
+    const x = 120 + Math.random() * (WORLD.width - 240);
+    const z = 120 + Math.random() * (WORLD.depth - 240);
+    const overlaps = list.some(o =>
+      x < o.x + o.w + 20 && x + s > o.x - 20 &&
+      z < o.z + o.d + 20 && z + s > o.z - 20
+    );
+    if (overlaps) continue;
+    list.push({ x, z, w: s, d: s, type: 'tree' });
+    trees++;
+  }
+
   return list;
 }
 
