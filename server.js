@@ -38,6 +38,13 @@ const MAX_HP = 100;
 const KILLS_FOR_ROULETTE = 3;
 const OBSTACLES = generateObstacles();
 
+// Артиллерия: удар по точке раз в минуту (с задержкой падения снаряда)
+const ARTILLERY_COOLDOWN_MS = 60000;
+const ARTILLERY_RADIUS = 130;
+const ARTILLERY_DAMAGE = 65;
+const ARTILLERY_DELAY_MS = 1400;
+const artilleryStrikes = []; // { x, z, impactAt, ownerId }
+
 // Ранги за килы
 const RANKS = [
   { kills: 0, name: 'Рядовой' },
@@ -291,6 +298,7 @@ function createPlayer(id, nickname, color, model) {
     lastShotTime: 0,
     respawnAt: 0,
     killsSinceUpgrade: 0,
+    artilleryReadyAt: 0, // раз в минуту можно вызвать артиллерию
   };
 }
 
@@ -317,6 +325,17 @@ io.on('connection', (socket) => {
     });
 
     console.log(`Игрок подключился: ${player.nickname} (${socket.id})`);
+  });
+
+  socket.on('artillery', (data) => {
+    const p = players[socket.id];
+    const now = Date.now();
+    if (!p || !p.alive || now < p.artilleryReadyAt) return;
+    const x = Math.max(0, Math.min(WORLD.width, Number(data && data.x) || 0));
+    const z = Math.max(0, Math.min(WORLD.depth, Number(data && data.z) || 0));
+    p.artilleryReadyAt = now + ARTILLERY_COOLDOWN_MS;
+    artilleryStrikes.push({ x, z, impactAt: now + ARTILLERY_DELAY_MS, ownerId: p.id });
+    io.emit('artillery', { x, z, impactAt: now + ARTILLERY_DELAY_MS, ownerId: p.id });
   });
 
   socket.on('input', (input) => {
@@ -375,7 +394,26 @@ function tick() {
 
   updateBullets(dt, now);
   updatePickups(now);
+  updateArtillery(now);
   broadcastState();
+}
+
+// Артиллерия: снаряд падает через задержку, наносит урон по площади
+function updateArtillery(now) {
+  for (let i = artilleryStrikes.length - 1; i >= 0; i--) {
+    const s = artilleryStrikes[i];
+    if (now < s.impactAt) continue;
+    artilleryStrikes.splice(i, 1);
+    for (const id in players) {
+      const t = players[id];
+      if (!t.alive || t.id === s.ownerId) continue;
+      const d = Math.hypot(t.x - s.x, t.z - s.z);
+      if (d < ARTILLERY_RADIUS) {
+        const dmg = Math.round(ARTILLERY_DAMAGE * (1 - 0.65 * d / ARTILLERY_RADIUS));
+        if (dmg > 0) dealDamage(t, dmg, s.ownerId, s.x, s.z, null, now);
+      }
+    }
+  }
 }
 
 // Бонусы на карте: появление и подбор
@@ -827,6 +865,7 @@ function broadcastState() {
       deaths: p.deaths,
       ammo: p.input.ammo,
       effects,
+      artilleryReadyAt: p.artilleryReadyAt,
     };
   });
 

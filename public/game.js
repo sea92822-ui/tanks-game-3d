@@ -769,6 +769,10 @@ function connectToServer(nickname, color) {
     shake = Math.max(shake, 0.7);
   });
 
+  socket.on('artillery', (data) => {
+    showArtilleryStrike(data);
+  });
+
   socket.on('roulette', (data) => {
     spinRoulette(data.ability);
   });
@@ -833,6 +837,7 @@ window.addEventListener('keydown', (e) => {
     case 'KeyE': keys.camRight = true; break;
     case 'Digit1': setAmmo('ap'); break;
     case 'Digit2': setAmmo('he'); break;
+    case 'KeyX': callArtillery(); break;
   }
 });
 window.addEventListener('keyup', (e) => {
@@ -945,6 +950,12 @@ zoomBtnEl.addEventListener('touchstart', (e) => {
   zoomBtnEl.classList.toggle('active', isScoped);
 }, { passive: false });
 
+// Артиллерия (мобильная кнопка)
+document.getElementById('artyBtn').addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  callArtillery();
+}, { passive: false });
+
 // Прицеливание касанием: правый палец по экрану — башня следует за точкой
 let touchAimId = -1;
 let lastAimX = 0;
@@ -1015,6 +1026,82 @@ function exitScope() {
   if (document.pointerLockElement === renderer.domElement) {
     document.exitPointerLock();
   }
+}
+
+// ---------------------------------------------------------------------------
+// АРТИЛЛЕРИЯ: раз в минуту удар по прицельной точке
+// ---------------------------------------------------------------------------
+const artilleryIncoming = []; // { x, z, impactAt, ring, shell }
+
+function callArtillery() {
+  if (!socket || !selfId) return;
+  const me = currentState.players.find(p => p.id === selfId);
+  if (!me || !me.alive) return;
+  if ((me.artilleryReadyAt || 0) > Date.now()) return;
+  raycaster.setFromCamera(mouseNDC, camera);
+  const hitPoint = new THREE.Vector3();
+  if (!raycaster.ray.intersectPlane(groundPlane, hitPoint)) return;
+  socket.emit('artillery', { x: hitPoint.x, z: hitPoint.z });
+}
+
+// Падающий снаряд + метка зоны поражения (видят все)
+function showArtilleryStrike(data) {
+  if (!settingsState.effects) return;
+  const delay = Math.max(300, data.impactAt - Date.now());
+
+  // красное кольцо зоны поражения
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(126, 132, 48),
+    new THREE.MeshBasicMaterial({ color: 0xff3333, transparent: true, opacity: 0.65, side: THREE.DoubleSide })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(data.x, 0.6, data.z);
+  scene.add(ring);
+
+  // падающий снаряд из неба
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(3.2, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff5522 }));
+  shell.position.set(data.x, 420, data.z);
+  scene.add(shell);
+
+  artilleryIncoming.push({ x: data.x, z: data.z, impactAt: Date.now() + delay, ring, shell, born: Date.now(), delayMs: delay });
+}
+
+function updateArtilleryVisuals(now) {
+  for (let i = artilleryIncoming.length - 1; i >= 0; i--) {
+    const a = artilleryIncoming[i];
+    const t = Math.min(1, (now - a.born) / a.delayMs); // 0..1 по ходу полёта
+    a.shell.position.y = 420 * (1 - t * t); // падение с ускорением
+    a.ring.material.opacity = 0.65 * (1 - t * 0.5);
+    if (t >= 1) {
+      scene.remove(a.ring);
+      scene.remove(a.shell);
+      a.ring.material.dispose();
+      a.shell.material.dispose();
+      spawnArtilleryImpact(a.x, a.z);
+      artilleryIncoming.splice(i, 1);
+    }
+  }
+}
+
+function spawnArtilleryImpact(x, z) {
+  if (!settingsState.effects) return;
+  // вспышка-прожектор
+  const flash = new THREE.PointLight(0xff8833, 6, 520);
+  flash.position.set(x, 26, z);
+  scene.add(flash);
+  setTimeout(() => scene.remove(flash), 700);
+
+  spawnExplosion(x, z);
+  setTimeout(() => spawnExplosion(x + 24, z + 24), 120);
+  setTimeout(() => spawnExplosion(x - 22, z + 16), 240);
+  spawnDustWave(x, z);
+  setTimeout(() => spawnDustWave(x, z), 350); // двойная волна
+  spawnParticles(x, 22, z, 14, [0xff8a2a, 0xffd75e, 0xff5a3d, 0xffffff], 120, 1.5, 800, 3.2, 1.2);
+  spawnParticles(x, 30, z, 10, [0x666666, 0x888888, 0x555555], 60, 2.4, 1800, 6, 0.5); // столб дыма
+  // тряска и звук для своего экрана
+  playSound3D(explosionSound, x, z);
+  const me = currentState.players.find(p => p.id === selfId);
+  if (me && Math.hypot(me.x - x, me.z - z) < 260) addShake(1.6);
 }
 
 document.addEventListener('pointerlockchange', () => {
@@ -1213,6 +1300,8 @@ const hpBarFill = document.getElementById('hpBarFill');
 const hpText = document.getElementById('hpText');
 const reloadBarFill = document.getElementById('reloadBarFill');
 const reloadText = document.getElementById('reloadText');
+const artilleryFill = document.getElementById('artilleryFill');
+const artilleryText = document.getElementById('artilleryText');
 const pingText = document.getElementById('pingText');
 let lastHp = null;
 let lastShotAt = -Infinity;
@@ -1250,6 +1339,16 @@ function updateHUD() {
   } else {
     reloadBarFill.style.background = '#f39c12';
     reloadText.textContent = 'ПЕРЕЗАРЯДКА';
+  }
+
+  // Артиллерия: кулдаун минута
+  const artyRem = Math.max(0, (me.artilleryReadyAt || 0) - Date.now());
+  if (artyRem <= 0) {
+    artilleryFill.style.width = '100%';
+    artilleryText.textContent = 'АРТИЛЛЕРИЯ ГОТОВА · X';
+  } else {
+    artilleryFill.style.width = (100 - artyRem / 60000 * 100) + '%';
+    artilleryText.textContent = 'АРТИЛЛЕРИЯ ' + Math.ceil(artyRem / 1000) + 'с';
   }
 
   updateActiveEffects(me.effects || []);
@@ -2457,6 +2556,7 @@ function animate() {
     updateWreckedFires(now, dt);
     updateClouds(dt);
     updateScopeInfo();
+    updateArtilleryVisuals(now);
     updateCamera(players);
   }
 
