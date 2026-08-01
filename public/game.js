@@ -325,7 +325,7 @@ function updateHUD() {
   const me = currentState.players.find(p => p.id === selfId);
   if (!me) return;
 
-  if (lastHp !== null && me.hp < lastHp) addShake(1.6); // попали — трясём камеру
+  if (lastHp !== null && me.hp < lastHp) addShake(1.1); // попали — трясём камеру
   lastHp = me.hp;
 
   const pct = Math.max(0, me.hp / me.maxHp) * 100;
@@ -504,7 +504,7 @@ function syncBullets(bullets) {
       scene.add(mesh);
       bulletMeshes.set(b.id, mesh);
       spawnMuzzleFlash(b.x, b.z);
-      if (b.ownerId === selfId) addShake(0.6); // отдача при своём выстреле
+      if (b.ownerId === selfId) addShake(0.35); // отдача при своём выстреле
     }
 
     mesh.position.set(b.x, 18, b.z);
@@ -558,8 +558,9 @@ function updateMuzzleFlashes() {
 }
 
 let shake = 0;
+let shakeTime = 0;
 function addShake(amount) {
-  shake = Math.min(6, shake + amount);
+  shake = Math.min(3, shake + amount);
 }
 
 // ---------------------------------------------------------------------------
@@ -613,15 +614,17 @@ function updateCamera(players) {
     camera.lookAt(camLookTarget);
   }
 
-  // Тряска камеры (затухает со временем)
+  // Тряска камеры: плавная синусоида, затухает со временем
   if (shake > 0.01) {
+    shakeTime += 0.4;
     const k = shake;
-    camera.position.x += (Math.random() - 0.5) * k;
-    camera.position.y += (Math.random() - 0.5) * k * 0.5;
-    camera.position.z += (Math.random() - 0.5) * k;
-    shake *= 0.86;
+    camera.position.x += Math.sin(shakeTime * 17) * k * 0.3;
+    camera.position.y += Math.cos(shakeTime * 13) * k * 0.2;
+    camera.position.z += Math.sin(shakeTime * 11 + 2) * k * 0.3;
+    shake *= 0.9;
   } else {
     shake = 0;
+    shakeTime = 0;
   }
 }
 
