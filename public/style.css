@@ -78,6 +78,35 @@ html, body {
   margin-bottom: 6px;
 }
 
+#xpBarWrap {
+  width: 240px;
+  height: 14px;
+  background: rgba(0,0,0,0.5);
+  border: 1px solid #555;
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+#xpBarFill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #8e44ad, #9b59b6);
+  transition: width 0.3s ease;
+}
+
+#xpText {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px #000;
+}
+
 /* ---------- Панель типа снаряда ---------- */
 #ammoPanel {
   position: absolute;
@@ -273,6 +302,25 @@ html, body {
 .swatch.selected {
   border-color: #fff;
   box-shadow: 0 0 8px rgba(255,255,255,0.6);
+}
+
+.swatch.locked {
+  opacity: 0.25;
+  cursor: not-allowed;
+  position: relative;
+  filter: grayscale(0.8);
+}
+
+.swatch.locked::after {
+  content: attr(title);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 9px;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 1px 1px 2px #000;
 }
 
 #menuSettingsBtn {

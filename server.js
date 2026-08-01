@@ -199,7 +199,9 @@ for (let i = 0; i < PICKUP_COUNT; i++) {
   pickups.push({ id: i, type: PICKUP_TYPES[i % PICKUP_TYPES.length].type, x: p.x, z: p.z, active: true, respawnAt: 0 });
 }
 
-const TANK_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#ff6fa4'];
+const TANK_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#ff6fa4',
+  '#34495e', '#16a085', '#d35400', '#7f8c8d', '#8e44ad', '#ffffff'];
+const XP_PER_KILL = 100;
 
 function randomColor() {
   return TANK_COLORS[Math.floor(Math.random() * TANK_COLORS.length)];
@@ -732,6 +734,7 @@ function dealDamage(target, amount, attackerId, x, z, bullet, now) {
       attacker.kills += 1;
       if (attacker.flags.rage) attacker.rageKills += 1;
       attacker.killsSinceUpgrade += 1;
+      io.to(attacker.id).emit('xp', { amount: XP_PER_KILL }); // опыт за кил
 
       if (attacker.killsSinceUpgrade >= KILLS_FOR_ROULETTE) {
         attacker.killsSinceUpgrade = 0;

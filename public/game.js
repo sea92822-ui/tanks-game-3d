@@ -291,17 +291,69 @@ const nicknameOverlay = document.getElementById('nicknameOverlay');
 const nicknameInput = document.getElementById('nicknameInput');
 const startBtn = document.getElementById('startBtn');
 
-const TANK_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#ff6fa4'];
+const TANK_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#ff6fa4',
+  '#34495e', '#16a085', '#d35400', '#7f8c8d', '#8e44ad', '#ffffff'];
 let selectedColor = null;
+
+// ---------------------------------------------------------------------------
+// ОПЫТ: сохраняется между сессиями, открывает цвета и звания
+// ---------------------------------------------------------------------------
+let xpTotal = 0;
+try { xpTotal = Math.max(0, Number(localStorage.getItem('tanksXp') || 0)); } catch (e) { /* ignore */ }
+
+// Уровень и прогресс до следующего
+function levelInfo(xp) {
+  let level = 1, need = 400, rest = xp;
+  while (rest >= need) {
+    rest -= need;
+    level++;
+    need = 400 + (level - 1) * 100;
+  }
+  return { level, cur: rest, need };
+}
+
+function addXp(amount) {
+  xpTotal += amount;
+  try { localStorage.setItem('tanksXp', String(xpTotal)); } catch (e) { /* ignore */ }
+  updateXpUI();
+}
+
+const xpBarWrapEl = document.getElementById('xpBarWrap');
+const xpBarFillEl = document.getElementById('xpBarFill');
+const xpTextEl = document.getElementById('xpText');
+
+function updateXpUI() {
+  const info = levelInfo(xpTotal);
+  const pct = Math.round(info.cur / info.need * 100);
+  xpBarFillEl.style.width = pct + '%';
+  xpTextEl.textContent = `Ур. ${info.level} · Опыт ${info.cur}/${info.need}`;
+}
+
+// Цвета, открываемые уровнем (первые 8 — базовые)
+const LOCKED_COLORS = {
+  '#34495e': 2,   // графит
+  '#16a085': 3,   // морской
+  '#d35400': 4,   // медь
+  '#7f8c8d': 5,   // серебро
+  '#8e44ad': 7,   // фиолет
+  '#ffffff': 10,  // белый
+};
+
+function colorAvailable(color) {
+  return !(color in LOCKED_COLORS) || levelInfo(xpTotal).level >= LOCKED_COLORS[color];
+}
 
 function buildColorPicker() {
   const wrap = document.getElementById('colorSwatches');
   TANK_COLORS.forEach(c => {
     const s = document.createElement('div');
-    s.className = 'swatch';
+    s.className = 'swatch' + (colorAvailable(c) ? '' : ' locked');
     s.style.background = c;
     s.dataset.color = c;
+    const needLevel = LOCKED_COLORS[c];
+    if (needLevel) s.title = `Уровень ${needLevel}`;
     s.addEventListener('click', () => {
+      if (!colorAvailable(c)) return;
       selectedColor = c;
       wrap.querySelectorAll('.swatch').forEach(x => x.classList.toggle('selected', x === s));
     });
@@ -309,6 +361,7 @@ function buildColorPicker() {
   });
 }
 buildColorPicker();
+updateXpUI();
 
 nicknameInput.focus();
 startBtn.addEventListener('click', startGame);
@@ -380,6 +433,12 @@ function connectToServer(nickname, color) {
 
   socket.on('latencyRes', () => {
     pingMs = Date.now() - pingSentAt;
+  });
+
+  socket.on('xp', (data) => {
+    addXp(data.amount);
+    const me = currentState.players.find(p => p.id === selfId);
+    if (me) showDamageText(me.x, me.z, '+' + data.amount + ' XP', '#9b59b6');
   });
 }
 
@@ -728,6 +787,46 @@ const myRankEl = document.getElementById('myRank');
 
 function updateMyRank(me) {
   myRankEl.textContent = `${rankName(me.kills)} · ${me.kills} килов · ${me.deaths} смертей`;
+}
+
+// ---------------------------------------------------------------------------
+// ПЫЛЬ ПОД ГУСЕНИЦАМИ
+// ---------------------------------------------------------------------------
+let dustTimer = 0;
+
+function emitTrackDust(dt) {
+  if (!settingsState.effects) return;
+  const me = currentState.players.find(p => p.id === selfId);
+  if (!me || !me.alive) return;
+  const moving = keys.forward || keys.back;
+  if (!moving) return;
+
+  dustTimer -= dt;
+  if (dustTimer > 0) return;
+  dustTimer = 0.07;
+
+  // пыль вылетает назад от движения
+  const dirSign = keys.forward ? -1 : 1;
+  const bx = Math.sin(me.chassisAngle) * dirSign;
+  const bz = Math.cos(me.chassisAngle) * dirSign;
+
+  for (const side of [-1, 1]) {
+    const tx = me.x + Math.cos(me.chassisAngle) * side * 15;
+    const tz = me.z - Math.sin(me.chassisAngle) * side * 15;
+    const mat = new THREE.MeshBasicMaterial({ color: Math.random() < 0.5 ? 0xb8a888 : 0xa59078, transparent: true });
+    const mesh = new THREE.Mesh(particleGeo, mat);
+    mesh.scale.setScalar(2 + Math.random() * 2.5);
+    mesh.position.set(tx + (Math.random() - 0.5) * 4, 1 + Math.random() * 2, tz + (Math.random() - 0.5) * 4);
+    scene.add(mesh);
+    particles.push({
+      mesh,
+      vx: bx * 70 + (Math.random() - 0.5) * 30,
+      vy: 15 + Math.random() * 25,
+      vz: bz * 70 + (Math.random() - 0.5) * 30,
+      born: performance.now(),
+      life: 600 + Math.random() * 300,
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1610,6 +1709,7 @@ function animate() {
     updateTrackMarks(players, now);
     updateDamageTexts(now);
     updateEngineSound();
+    emitTrackDust(dt);
     updateScopeInfo();
     updateCamera(players);
   }
