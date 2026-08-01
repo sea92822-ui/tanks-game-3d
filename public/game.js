@@ -13,6 +13,36 @@ const sceneContainer = document.getElementById('sceneContainer');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x8fc1e0);
 
+// ---------------------------------------------------------------------------
+// ОБЛАКА НА НЕБЕ (медленно плывут, зациклены)
+// ---------------------------------------------------------------------------
+const clouds = [];
+
+function createClouds() {
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false });
+  for (let i = 0; i < 8; i++) {
+    const group = new THREE.Group();
+    const puffs = 2 + Math.floor(Math.random() * 3);
+    for (let j = 0; j < puffs; j++) {
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(50 + Math.random() * 45, 8, 6), mat);
+      mesh.position.set((j - puffs / 2) * 60 + (Math.random() - 0.5) * 30, (Math.random() - 0.5) * 18, (Math.random() - 0.5) * 30);
+      mesh.scale.y = 0.45;
+      group.add(mesh);
+    }
+    group.position.set(Math.random() * 2000, 750 + Math.random() * 250, Math.random() * 2000);
+    scene.add(group);
+    clouds.push({ group, speed: 3 + Math.random() * 6 });
+  }
+}
+createClouds();
+
+function updateClouds(dt) {
+  clouds.forEach(c => {
+    c.group.position.x += c.speed * dt;
+    if (c.group.position.x > 2200) c.group.position.x = -200;
+  });
+}
+
 const NORMAL_FOV = 65;
 const SCOPE_FOV = 20;
 const camera = new THREE.PerspectiveCamera(NORMAL_FOV, window.innerWidth / window.innerHeight, 0.1, 3000);
@@ -229,8 +259,8 @@ function buildObstacles() {
 function createTankMesh(color) {
   const group = new THREE.Group();
 
-  const bodyMat = new THREE.MeshStandardMaterial({ color });
-  const darkMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+  const bodyMat = new THREE.MeshStandardMaterial({ color, metalness: 0.75, roughness: 0.28 }); // блик от солнца
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.5, roughness: 0.5 });
 
   // Корпус
   const body = new THREE.Mesh(new THREE.BoxGeometry(28, 14, 40), bodyMat);
@@ -409,6 +439,7 @@ function connectToServer(nickname, color) {
 
   socket.on('hit', (data) => {
     spawnExplosion(data.x, data.z);
+    spawnSpark(data.x, data.z); // искры металла при попадании по танку
     // 3D-звук: панорама взрыва относительно камеры
     playSound3D(explosionSound, data.x, data.z);
     // звук пробития слышит только тот, кто попал
@@ -793,7 +824,59 @@ function updateMyRank(me) {
 // ПЫЛЬ ПОД ГУСЕНИЦАМИ — ВИДНА ВСЕМ ИГРОКАМ
 // ---------------------------------------------------------------------------
 const playerDustTimers = new Map();
+const playerExhaustTimers = new Map();
+const playerPrevMoving = new Map();
 const prevPlayerPos = new Map();
+
+// Дым из выхлопа (постоянно при движении, клуб при старте)
+function emitExhaust(players, dt) {
+  if (!settingsState.effects) return;
+  players.forEach(p => {
+    if (!p.alive) return;
+    const prev = prevPlayerPos.get(p.id);
+    let speed = 0;
+    if (prev) speed = Math.hypot(p.x - prev.x, p.z - prev.z) / Math.max(dt, 0.001);
+    const moving = speed > 25;
+    const wasMoving = playerPrevMoving.get(p.id) || false;
+    playerPrevMoving.set(p.id, moving);
+
+    // клуб дыма при старте движения
+    if (moving && !wasMoving) {
+      for (let i = 0; i < 3; i++) spawnExhaustPuff(p, i * 90);
+    }
+    if (!moving) return;
+
+    let t = playerExhaustTimers.get(p.id) || 0;
+    t -= dt;
+    if (t > 0) { playerExhaustTimers.set(p.id, t); return; }
+    playerExhaustTimers.set(p.id, 0.18);
+    spawnExhaustPuff(p, 0);
+  });
+}
+
+function spawnExhaustPuff(p, delayMs) {
+  const a = p.chassisAngle;
+  const rx = -Math.sin(a);
+  const rz = -Math.cos(a);
+  for (const side of [-1, 1]) {
+    const tx = p.x + rx * 22 + Math.cos(a) * side * 10;
+    const tz = p.z + rz * 22 - Math.sin(a) * side * 10;
+    const mat = new THREE.MeshBasicMaterial({ color: 0x9c9c9c, transparent: true });
+    const mesh = new THREE.Mesh(particleGeo, mat);
+    mesh.scale.setScalar(2 + Math.random() * 2);
+    mesh.position.set(tx, 4, tz);
+    scene.add(mesh);
+    particles.push({
+      mesh,
+      vx: rx * 35 + (Math.random() - 0.5) * 12,
+      vy: 18 + Math.random() * 14,
+      vz: rz * 35 + (Math.random() - 0.5) * 12,
+      grav: 25,
+      born: performance.now() + delayMs,
+      life: 900 + Math.random() * 400,
+    });
+  }
+}
 
 function emitTrackDust(players, dt) {
   if (!settingsState.effects) return;
@@ -1129,6 +1212,9 @@ function syncTanks(players) {
       tankMeshes.delete(id);
       playerDustTimers.delete(id);
       prevPlayerPos.delete(id);
+      playerExhaustTimers.delete(id);
+      playerPrevMoving.delete(id);
+      wreckedTimers.delete(id);
     }
   }
 }
@@ -1277,12 +1363,36 @@ function spawnExplosion(x, z) {
 
   // Разлетающиеся искры
   spawnParticles(x, 18, z, 10, [0xff8a2a, 0xffd75e, 0xff5a3d, 0xffffff], 170, 1.2, 650, 2.2);
+  // Пылевая волна по земле
+  spawnDustWave(x, z);
 }
 
 // Рикошет: снаряд не пробил преграду
 function spawnSpark(x, z) {
   if (!settingsState.effects) return;
   spawnParticles(x, 18, z, 9, [0xffffff, 0xffe9a8, 0xffc24d], 280, 0.8, 380, 1.5);
+}
+
+// Пылевая волна от взрыва — разлетается по земле радиально
+function spawnDustWave(x, z) {
+  if (!settingsState.effects) return;
+  for (let i = 0; i < 12; i++) {
+    const ang = (i / 12) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
+    const mat = new THREE.MeshBasicMaterial({ color: 0xa8906c, transparent: true });
+    const mesh = new THREE.Mesh(particleGeo, mat);
+    mesh.scale.setScalar(3 + Math.random() * 3);
+    mesh.position.set(x, 2 + Math.random() * 3, z);
+    scene.add(mesh);
+    particles.push({
+      mesh,
+      vx: Math.cos(ang) * (110 + Math.random() * 90),
+      vy: 12 + Math.random() * 14,
+      vz: Math.sin(ang) * (110 + Math.random() * 90),
+      grav: 50,
+      born: performance.now(),
+      life: 800 + Math.random() * 400,
+    });
+  }
 }
 
 function updateExplosions() {
@@ -1457,8 +1567,8 @@ const trackGeo = new THREE.PlaneGeometry(3.4, 9);
 const trackMarks = []; // { mesh, born }
 const trackPool = [];
 const TRACK_MARK_DIST = 9;
-const TRACK_LIFE_MS = 8000;
-const TRACK_MAX_MARKS = 600;
+const TRACK_LIFE_MS = 25000;   // следы держатся долго
+const TRACK_MAX_MARKS = 1200;
 
 function placeTrackMark(x, z, angle) {
   if (!settingsState.effects) return;
@@ -1469,11 +1579,11 @@ function placeTrackMark(x, z, angle) {
     mesh.rotation.x = -Math.PI / 2;
     scene.add(mesh);
   }
-  mesh.position.set(x, 0.06, z);
-  mesh.rotation.z = Math.PI / 2 - angle;
-  mesh.material.opacity = 0.34;
-  mesh.visible = true;
-  trackMarks.push({ mesh, born: performance.now() });
+    mesh.position.set(x, 0.06, z);
+    mesh.rotation.z = Math.PI / 2 - angle;
+    mesh.material.opacity = 0.45;
+    mesh.visible = true;
+    trackMarks.push({ mesh, born: performance.now() });
 }
 
 function updateTrackMarks(players, now) {
@@ -1486,7 +1596,7 @@ function updateTrackMarks(players, now) {
       trackMarks.splice(i, 1);
       continue;
     }
-    m.mesh.material.opacity = 0.34 * (1 - age / TRACK_LIFE_MS);
+    m.mesh.material.opacity = 0.45 * (1 - age / TRACK_LIFE_MS);
   }
 
   players.forEach(p => {
@@ -1521,6 +1631,81 @@ function destroyTank(mesh) {
   spawnExplosion(mesh.position.x, mesh.position.z);
   spawnParticles(mesh.position.x, 22, mesh.position.z, 14, [0xff8a2a, 0xff5a3d, 0xffd75e], 230, 1.4, 900, 3);
   spawnParticles(mesh.position.x, 24, mesh.position.z, 8, [0x555555, 0x777777, 0x444444], 70, 2.2, 1600, 5.5);
+  // Обломки корпуса разлетаются
+  spawnDebris(mesh.position.x, mesh.position.z);
+}
+
+// Мелкие обломки корпуса с физикой полёта
+const debrisColors = [0x3a3a3a, 0x555555, 0x2e2e2e, 0x4a4a4a];
+
+function spawnDebris(x, z) {
+  if (!settingsState.effects) return;
+  for (let i = 0; i < 7; i++) {
+    const s = 3 + Math.random() * 5;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), new THREE.MeshBasicMaterial({ color: debrisColors[i % debrisColors.length] }));
+    mesh.position.set(x + (Math.random() - 0.5) * 12, 10 + Math.random() * 12, z + (Math.random() - 0.5) * 12);
+    scene.add(mesh);
+    flyingBits.push({
+      mesh,
+      vx: (Math.random() - 0.5) * 230,
+      vy: 90 + Math.random() * 170,
+      vz: (Math.random() - 0.5) * 230,
+      spinX: (Math.random() - 0.5) * 14,
+      spinY: (Math.random() - 0.5) * 14,
+      born: performance.now(),
+    });
+  }
+}
+
+// Огонь и дым из подбитого танка, пока лежит обломком
+const wreckedTimers = new Map();
+
+function updateWreckedFires(now, dt) {
+  if (!settingsState.effects) return;
+  tankMeshes.forEach((mesh, id) => {
+    if (!mesh.userData.wrecked) return;
+    let t = wreckedTimers.get(id) || 0;
+    t -= dt;
+    if (t > 0) { wreckedTimers.set(id, t); return; }
+    wreckedTimers.set(id, 0.12);
+
+    const px = mesh.position.x + (Math.random() - 0.5) * 10;
+    const pz = mesh.position.z + (Math.random() - 0.5) * 10;
+
+    // дым
+    const mat = new THREE.MeshBasicMaterial({ color: 0x666666, transparent: true });
+    const smoke = new THREE.Mesh(particleGeo, mat);
+    smoke.scale.setScalar(3 + Math.random() * 3);
+    smoke.position.set(px, 12 + Math.random() * 6, pz);
+    scene.add(smoke);
+    particles.push({
+      mesh: smoke,
+      vx: (Math.random() - 0.5) * 12,
+      vy: 20 + Math.random() * 18,
+      vz: (Math.random() - 0.5) * 12,
+      grav: 15,
+      born: performance.now(),
+      life: 1200 + Math.random() * 500,
+    });
+
+    // языки огня
+    if (Math.random() < 0.4) {
+      const fmat = new THREE.MeshBasicMaterial({ color: Math.random() < 0.5 ? 0xff8a2a : 0xff5a3d, transparent: true });
+      const fire = new THREE.Mesh(particleGeo, fmat);
+      fire.scale.setScalar(2 + Math.random() * 2.5);
+      fire.position.set(px, 8 + Math.random() * 6, pz);
+      scene.add(fire);
+      particles.push({
+        mesh: fire,
+        vx: (Math.random() - 0.5) * 10,
+        vy: 14 + Math.random() * 12,
+        vz: (Math.random() - 0.5) * 10,
+        grav: 5,
+        born: performance.now(),
+        life: 350 + Math.random() * 200,
+      });
+    }
+  });
 }
 
 // Звук выстрела
@@ -1758,6 +1943,9 @@ function animate() {
     updateDamageTexts(now);
     updateEngineSound();
     emitTrackDust(players, dt);
+    emitExhaust(players, dt);
+    updateWreckedFires(now, dt);
+    updateClouds(dt);
     updateScopeInfo();
     updateCamera(players);
   }
