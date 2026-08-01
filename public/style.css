@@ -832,3 +832,28 @@ body.touch #touchControls { display: block; }
 }
 .modelBtn.selected { border-color: #f1c40f; background: #3a3410; color: #ffd75e; }
 .modelBtn.locked { opacity: 0.45; cursor: not-allowed; }
+
+/* ---------- Превью танка в меню ---------- */
+#tankPreview {
+  width: 170px;
+  height: 170px;
+  margin: 10px auto 4px;
+  border-radius: 12px;
+  background: radial-gradient(circle at 50% 30%, #2c3440, #14181e);
+  border: 1px solid #333;
+  overflow: hidden;
+}
+#tankPreview canvas { display: block; }
+
+/* ---------- Бейдж модели в HUD ---------- */
+#myModel {
+  position: absolute;
+  top: 0;
+  left: 200px;
+  font-size: 13px;
+  color: #ffd75e;
+  background: rgba(0,0,0,0.45);
+  padding: 3px 10px;
+  border-radius: 6px;
+  z-index: 10;
+}

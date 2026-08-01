@@ -659,6 +659,7 @@ function buildModelPicker() {
       selectedModel = m.id;
       try { localStorage.setItem('tanksModel', m.id); } catch (e) { /* ignore */ }
       wrap.querySelectorAll('.modelBtn').forEach(x => x.classList.toggle('selected', x === b));
+      updateTankPreview();
     });
     wrap.appendChild(b);
   });
@@ -669,6 +670,37 @@ function modelAvailable(modelId) {
   return !m || levelInfo(xpTotal).level >= m.level;
 }
 buildModelPicker();
+
+// ---------------------------------------------------------------------------
+// ПРЕВЬЮ ВЫБРАННОГО ТАНКА В МЕНЮ (цвет + модель, та же фабрика, что в игре)
+// ---------------------------------------------------------------------------
+const tankPreviewEl = document.getElementById('tankPreview');
+const previewScene = new THREE.Scene();
+const previewCamera = new THREE.PerspectiveCamera(45, 1, 1, 600);
+previewCamera.position.set(36, 30, 52);
+previewCamera.lookAt(0, 16, 0);
+const previewRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+previewRenderer.setSize(170, 170);
+previewRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+tankPreviewEl.appendChild(previewRenderer.domElement);
+previewScene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const previewLight = new THREE.DirectionalLight(0xffffff, 1.15);
+previewLight.position.set(35, 55, 30);
+previewScene.add(previewLight);
+
+let previewTank = null;
+
+function updateTankPreview() {
+  if (previewTank) {
+    previewScene.remove(previewTank);
+    previewTank.traverse(o => { if (o.isMesh) { o.geometry.dispose?.(); o.material.dispose?.(); } });
+    previewTank = null;
+  }
+  previewTank = createTankMesh(selectedColor || '#e74c3c', selectedModel);
+  previewTank.rotation.y = -0.6;
+  previewScene.add(previewTank);
+}
+updateTankPreview();
 
 function buildColorPicker() {
   const wrap = document.getElementById('colorSwatches');
@@ -683,6 +715,7 @@ function buildColorPicker() {
       if (!colorAvailable(c)) return;
       selectedColor = c;
       wrap.querySelectorAll('.swatch').forEach(x => x.classList.toggle('selected', x === s));
+      updateTankPreview();
     });
     wrap.appendChild(s);
   });
@@ -1239,9 +1272,12 @@ function rankName(kills) {
 }
 
 const myRankEl = document.getElementById('myRank');
+const myModelEl = document.getElementById('myModel');
 
 function updateMyRank(me) {
   myRankEl.textContent = `${rankName(me.kills)} · ${me.kills} килов · ${me.deaths} смертей`;
+  const m = TANK_MODELS.find(x => x.id === me.model);
+  if (myModelEl) myModelEl.textContent = '🛡 ' + (m ? m.name : 'Средний');
 }
 
 // ---------------------------------------------------------------------------
@@ -2422,6 +2458,12 @@ function animate() {
     updateClouds(dt);
     updateScopeInfo();
     updateCamera(players);
+  }
+
+  // Превью танка в меню: крутится, пока открыт экран ника
+  if (!nicknameOverlay.classList.contains('hidden') && previewTank) {
+    previewTank.rotation.y += 0.008;
+    previewRenderer.render(previewScene, previewCamera);
   }
 
   renderer.render(scene, camera);
