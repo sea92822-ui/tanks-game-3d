@@ -187,7 +187,7 @@ html, body {
 /* ---------- Leaderboard ---------- */
 #leaderboard {
   position: fixed;
-  top: 20px;
+  top: 228px; /* ниже мини-карты (200px + отступы) */
   right: 20px;
   z-index: 10;
   background: rgba(0,0,0,0.55);
