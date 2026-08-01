@@ -365,7 +365,7 @@ function applyDamage(target, bullet, now) {
   const tipZ = target.z + Math.cos(target.turretAngle) * 34;
   const barrelHit = Math.hypot(bullet.x - tipX, bullet.z - tipZ) < 16;
 
-  io.emit('hit', { x: target.x, z: target.z, color: bullet.ownerColor, id: target.id, barrel: barrelHit });
+  io.emit('hit', { x: target.x, z: target.z, color: bullet.ownerColor, id: target.id, barrel: barrelHit, ownerId: bullet.ownerId });
   if (target.hp <= 0) {
     target.alive = false;
     target.deaths += 1;

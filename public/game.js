@@ -354,7 +354,8 @@ function connectToServer(nickname, color) {
 
   socket.on('hit', (data) => {
     spawnExplosion(data.x, data.z);
-    playPenetrationSound();
+    // звук пробития слышит только тот, кто попал
+    if (data.ownerId === selfId) playPenetrationSound();
     if (data.barrel) breakOffBarrel(data.id);
   });
 
