@@ -1380,17 +1380,18 @@ function spawnDustWave(x, z) {
     const ang = (i / 12) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
     const mat = new THREE.MeshBasicMaterial({ color: 0xa8906c, transparent: true });
     const mesh = new THREE.Mesh(particleGeo, mat);
-    mesh.scale.setScalar(3 + Math.random() * 3);
-    mesh.position.set(x, 2 + Math.random() * 3, z);
+    mesh.scale.setScalar(2 + Math.random() * 1.5);
+    mesh.position.set(x, 2 + Math.random() * 2, z);
     scene.add(mesh);
     particles.push({
       mesh,
-      vx: Math.cos(ang) * (110 + Math.random() * 90),
-      vy: 12 + Math.random() * 14,
-      vz: Math.sin(ang) * (110 + Math.random() * 90),
-      grav: 50,
+      vx: Math.cos(ang) * (55 + Math.random() * 45),
+      vy: 10 + Math.random() * 10,
+      vz: Math.sin(ang) * (55 + Math.random() * 45),
+      grav: 40,
+      grow: 0.8,
       born: performance.now(),
-      life: 800 + Math.random() * 400,
+      life: 700 + Math.random() * 350,
     });
   }
 }
@@ -1467,7 +1468,7 @@ function updateParticles(dt, now) {
     p.mesh.position.z += p.vz * dt;
     const t = age / p.life;
     p.mesh.material.opacity = 1 - t;
-    p.mesh.scale.multiplyScalar(1 + dt * 2);
+    p.mesh.scale.multiplyScalar(1 + (p.grow || 2) * dt);
   }
 }
 
