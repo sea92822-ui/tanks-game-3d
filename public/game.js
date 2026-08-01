@@ -146,9 +146,8 @@ let socket = null;
 let selfId = null;
 
 let currentState = { players: [], bullets: [] };
-let previousState = { players: [], bullets: [] };
-let lastStateTime = Date.now();
-let prevStateTime = Date.now();
+const RENDER_DELAY = 100; // мс — рендерим мир с фиксированной задержкой (буфер интерполяции)
+const stateBuffer = [];    // { time, state } — последние состояния от сервера
 
 const tankMeshes = new Map();   // id -> THREE.Group
 const bulletMeshes = new Map(); // id -> THREE.Mesh
@@ -192,10 +191,10 @@ function connectToServer(nickname) {
   });
 
   socket.on('state', (state) => {
-    previousState = currentState;
-    prevStateTime = lastStateTime;
+    stateBuffer.push({ time: Date.now(), state });
+    const cutoff = Date.now() - RENDER_DELAY;
+    while (stateBuffer.length > 2 && stateBuffer[1].time <= cutoff) stateBuffer.shift();
     currentState = state;
-    lastStateTime = Date.now();
     updateHUD();
     updateLeaderboard();
     checkDeathScreen();
@@ -417,13 +416,17 @@ function lerpAngleShort(a, b, t) {
 }
 
 function getInterpolatedPlayers() {
-  const now = Date.now();
-  const span = Math.max(lastStateTime - prevStateTime, 1);
-  let t = (now - lastStateTime) / span + 1;
-  t = Math.max(0, Math.min(2, t));
+  if (stateBuffer.length === 0) return [];
+  const renderTime = Date.now() - RENDER_DELAY;
+  const a = stateBuffer[0];
+  const b = stateBuffer[1];
+  if (!b || a.time >= b.time) return a.state.players;
 
-  return currentState.players.map(cur => {
-    const prev = previousState.players.find(p => p.id === cur.id) || cur;
+  let t = (renderTime - a.time) / (b.time - a.time);
+  t = Math.max(0, Math.min(1, t));
+
+  return b.state.players.map(cur => {
+    const prev = a.state.players.find(p => p.id === cur.id) || cur;
     return {
       ...cur,
       x: lerp(prev.x, cur.x, t),
@@ -435,13 +438,17 @@ function getInterpolatedPlayers() {
 }
 
 function getInterpolatedBullets() {
-  const now = Date.now();
-  const span = Math.max(lastStateTime - prevStateTime, 1);
-  let t = (now - lastStateTime) / span + 1;
-  t = Math.max(0, Math.min(2, t));
+  if (stateBuffer.length === 0) return [];
+  const renderTime = Date.now() - RENDER_DELAY;
+  const a = stateBuffer[0];
+  const b = stateBuffer[1];
+  if (!b || a.time >= b.time) return a.state.bullets;
 
-  return currentState.bullets.map(cur => {
-    const prev = previousState.bullets.find(b => b.id === cur.id) || cur;
+  let t = (renderTime - a.time) / (b.time - a.time);
+  t = Math.max(0, Math.min(1, t));
+
+  return b.state.bullets.map(cur => {
+    const prev = a.state.bullets.find(bul => bul.id === cur.id) || cur;
     return { ...cur, x: lerp(prev.x, cur.x, t), z: lerp(prev.z, cur.z, t) };
   });
 }
@@ -517,6 +524,7 @@ function getSharedBulletGeometry() {
 // КАМЕРА
 // ---------------------------------------------------------------------------
 const chaseCamOffset = new THREE.Vector3(0, 0, 0);
+const camLookTarget = new THREE.Vector3(0, 12, 0);
 let currentFov = NORMAL_FOV;
 
 function updateCamera(players) {
@@ -559,8 +567,8 @@ function updateCamera(players) {
     );
     camera.position.lerp(desired, 0.12);
 
-    const lookAt = new THREE.Vector3(me.x, 12, me.z);
-    camera.lookAt(lookAt);
+    camLookTarget.lerp(new THREE.Vector3(me.x, 12, me.z), 0.15);
+    camera.lookAt(camLookTarget);
   }
 }
 
