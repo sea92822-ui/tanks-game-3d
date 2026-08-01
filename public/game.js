@@ -790,43 +790,48 @@ function updateMyRank(me) {
 }
 
 // ---------------------------------------------------------------------------
-// ПЫЛЬ ПОД ГУСЕНИЦАМИ
+// ПЫЛЬ ПОД ГУСЕНИЦАМИ — ВИДНА ВСЕМ ИГРОКАМ
 // ---------------------------------------------------------------------------
-let dustTimer = 0;
+const playerDustTimers = new Map();
+const prevPlayerPos = new Map();
 
-function emitTrackDust(dt) {
+function emitTrackDust(players, dt) {
   if (!settingsState.effects) return;
-  const me = currentState.players.find(p => p.id === selfId);
-  if (!me || !me.alive) return;
-  const moving = keys.forward || keys.back;
-  if (!moving) return;
+  players.forEach(p => {
+    if (!p.alive) return;
+    const prev = prevPlayerPos.get(p.id);
+    let speed = 0;
+    if (prev) speed = Math.hypot(p.x - prev.x, p.z - prev.z) / Math.max(dt, 0.001);
+    prevPlayerPos.set(p.id, { x: p.x, z: p.z });
+    if (speed < 25) return;
 
-  dustTimer -= dt;
-  if (dustTimer > 0) return;
-  dustTimer = 0.07;
+    let t = playerDustTimers.get(p.id) || 0;
+    t -= dt;
+    if (t > 0) { playerDustTimers.set(p.id, t); return; }
+    playerDustTimers.set(p.id, 0.1);
 
-  // пыль вылетает назад от движения
-  const dirSign = keys.forward ? -1 : 1;
-  const bx = Math.sin(me.chassisAngle) * dirSign;
-  const bz = Math.cos(me.chassisAngle) * dirSign;
+    // пыль вылетает назад от движения
+    const bx = -Math.sin(p.chassisAngle);
+    const bz = -Math.cos(p.chassisAngle);
 
-  for (const side of [-1, 1]) {
-    const tx = me.x + Math.cos(me.chassisAngle) * side * 15;
-    const tz = me.z - Math.sin(me.chassisAngle) * side * 15;
-    const mat = new THREE.MeshBasicMaterial({ color: Math.random() < 0.5 ? 0xb8a888 : 0xa59078, transparent: true });
-    const mesh = new THREE.Mesh(particleGeo, mat);
-    mesh.scale.setScalar(2 + Math.random() * 2.5);
-    mesh.position.set(tx + (Math.random() - 0.5) * 4, 1 + Math.random() * 2, tz + (Math.random() - 0.5) * 4);
-    scene.add(mesh);
-    particles.push({
-      mesh,
-      vx: bx * 70 + (Math.random() - 0.5) * 30,
-      vy: 15 + Math.random() * 25,
-      vz: bz * 70 + (Math.random() - 0.5) * 30,
-      born: performance.now(),
-      life: 600 + Math.random() * 300,
-    });
-  }
+    for (const side of [-1, 1]) {
+      const tx = p.x + Math.cos(p.chassisAngle) * side * 15;
+      const tz = p.z - Math.sin(p.chassisAngle) * side * 15;
+      const mat = new THREE.MeshBasicMaterial({ color: Math.random() < 0.5 ? 0xb8a888 : 0xa59078, transparent: true });
+      const mesh = new THREE.Mesh(particleGeo, mat);
+      mesh.scale.setScalar(2 + Math.random() * 2.5);
+      mesh.position.set(tx + (Math.random() - 0.5) * 4, 1 + Math.random() * 2, tz + (Math.random() - 0.5) * 4);
+      scene.add(mesh);
+      particles.push({
+        mesh,
+        vx: bx * 70 + (Math.random() - 0.5) * 30,
+        vy: 15 + Math.random() * 25,
+        vz: bz * 70 + (Math.random() - 0.5) * 30,
+        born: performance.now(),
+        life: 600 + Math.random() * 300,
+      });
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1117,11 +1122,13 @@ function syncTanks(players) {
     }
   });
 
-  // Удаляем меши отключившихся игроков
+  // Удаляем меши отключившихся игроков и их эффекты
   for (const [id, mesh] of tankMeshes) {
     if (!seenIds.has(id)) {
       scene.remove(mesh);
       tankMeshes.delete(id);
+      playerDustTimers.delete(id);
+      prevPlayerPos.delete(id);
     }
   }
 }
@@ -1140,13 +1147,13 @@ function syncBullets(bullets) {
       scene.add(mesh);
       bulletMeshes.set(b.id, mesh);
       spawnMuzzleFlash(b.x, b.z);
+      spawnMuzzleSmoke(b.x, b.z); // дым после выстрела — видят все
       if (b.ownerId === selfId) {
         addShake(0.35); // отдача при своём выстреле
         playShotSound();
         lastShotAt = Date.now();
         const me = tankMeshes.get(selfId);
         if (me) me.userData.recoil = 7; // дуло отталкивается назад
-        spawnMuzzleSmoke(b.x, b.z); // дым вокруг танка после выстрела
       }
     }
 
@@ -1314,7 +1321,20 @@ function spawnParticles(x, y, z, count, colors, speed, upBias, life, size) {
   }
 }
 
+// Лимит частиц: старые удаляются, чтобы не накапливались
+const MAX_PARTICLES = 400;
+
 function updateParticles(dt, now) {
+  if (particles.length > MAX_PARTICLES) {
+    const over = particles.length - MAX_PARTICLES;
+    for (let i = 0; i < over; i++) {
+      const p = particles[i];
+      scene.remove(p.mesh);
+      p.mesh.material.dispose();
+    }
+    particles.splice(0, over);
+  }
+
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
     const age = now - p.born;
@@ -1730,7 +1750,7 @@ function animate() {
     updateTrackMarks(players, now);
     updateDamageTexts(now);
     updateEngineSound();
-    emitTrackDust(dt);
+    emitTrackDust(players, dt);
     updateScopeInfo();
     updateCamera(players);
   }
