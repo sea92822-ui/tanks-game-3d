@@ -145,6 +145,79 @@ html, body {
   font-weight: bold;
 }
 
+/* ---------- Пинг ---------- */
+#pingText {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  color: #2ecc71;
+  font-size: 14px;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px #000;
+  user-select: none;
+  background: rgba(0,0,0,0.4);
+  padding: 4px 12px;
+  border-radius: 6px;
+}
+
+/* ---------- Выбор цвета танка ---------- */
+#colorPicker {
+  margin-bottom: 16px;
+}
+
+#colorPicker p {
+  color: #aaa;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+#colorSwatches {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.1s ease, border-color 0.1s ease;
+}
+
+.swatch:hover {
+  transform: scale(1.12);
+}
+
+.swatch.selected {
+  border-color: #fff;
+  box-shadow: 0 0 8px rgba(255,255,255,0.6);
+}
+
+#menuSettingsBtn {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px;
+  font-size: 15px;
+  font-weight: bold;
+  border: none;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #2980b9, #1f618d);
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.1s ease, filter 0.1s ease;
+}
+
+#menuSettingsBtn:hover {
+  filter: brightness(1.15);
+  transform: translateY(-2px);
+}
+
 /* ---------- Настройки графики ---------- */
 #settingsBtn {
   position: fixed;
@@ -220,6 +293,7 @@ html, body {
 .settingsRow {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   font-size: 13px;
   padding: 4px 0;
@@ -228,6 +302,14 @@ html, body {
 
 .settingsRow input {
   accent-color: #2980b9;
+}
+
+.settingsRow input[type="range"] {
+  width: 100px;
+}
+
+#settingsPanel, #settingsBtn {
+  z-index: 130;
 }
 
 /* ---------- Прицел от первого лица (снайперский режим ПКМ) ---------- */

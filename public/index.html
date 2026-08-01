@@ -24,6 +24,9 @@
     <div id="controlsHint">W/S — вперёд/назад · A/D — поворот · Мышь — прицел башней · ЛКМ — огонь · ПКМ (зажать) — прицел от 1 лица · Q/E — камера · Колесо — зум</div>
   </div>
 
+  <!-- Пинг -->
+  <div id="pingText">Пинг: —</div>
+
   <!-- Таблица лидеров -->
   <div id="leaderboard">
     <h3>🏆 Лидеры</h3>
@@ -41,6 +44,8 @@
     </div>
     <label class="settingsRow"><input type="checkbox" id="shadowsToggle"> Тени</label>
     <label class="settingsRow"><input type="checkbox" id="effectsToggle"> Эффекты</label>
+    <div class="settingsRow"><span>Обзор</span><input type="range" id="fovSlider" min="60" max="90" step="1"></div>
+    <div class="settingsRow"><span>Звук</span><input type="range" id="volumeSlider" min="0" max="100" step="5"></div>
   </div>
 
   <!-- Оверлей прицела от первого лица -->
@@ -59,7 +64,12 @@
       <h1>⚔️ ТАНЧИКИ 3D ONLINE</h1>
       <p>Введите ник или начните с случайным</p>
       <input type="text" id="nicknameInput" maxlength="16" placeholder="Ваш ник (необязательно)">
+      <div id="colorPicker">
+        <p>Выбери цвет танка</p>
+        <div id="colorSwatches"></div>
+      </div>
       <button id="startBtn">В БОЙ!</button>
+      <button id="menuSettingsBtn" type="button">⚙️ Настройки</button>
     </div>
   </div>
 

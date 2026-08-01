@@ -102,9 +102,10 @@ const players = {};
 const bullets = [];
 let bulletIdCounter = 1;
 
+const TANK_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#ff6fa4'];
+
 function randomColor() {
-  const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#ff6fa4'];
-  return colors[Math.floor(Math.random() * colors.length)];
+  return TANK_COLORS[Math.floor(Math.random() * TANK_COLORS.length)];
 }
 
 function randomNickname() {
@@ -140,7 +141,7 @@ function getSafeSpawnPoint() {
   return { x: WORLD.width / 2, z: WORLD.depth / 2 };
 }
 
-function createPlayer(id, nickname) {
+function createPlayer(id, nickname, color) {
   const spawn = getSafeSpawnPoint();
   return {
     id,
@@ -149,7 +150,7 @@ function createPlayer(id, nickname) {
     z: spawn.z,
     chassisAngle: 0,   // направление корпуса / движения (рад, вокруг Y)
     turretAngle: 0,    // направление башни (рад, вокруг Y) — независимо от корпуса
-    color: randomColor(),
+    color: color || randomColor(),
     hp: MAX_HP,
     maxHp: MAX_HP,
     alive: true,
@@ -175,7 +176,8 @@ io.on('connection', (socket) => {
 
   socket.on('join', (data) => {
     const nickname = data && data.nickname ? String(data.nickname) : '';
-    const player = createPlayer(socket.id, nickname);
+    const color = data && TANK_COLORS.includes(data.color) ? data.color : null;
+    const player = createPlayer(socket.id, nickname, color);
     players[socket.id] = player;
 
     socket.emit('init', {
@@ -206,6 +208,8 @@ io.on('connection', (socket) => {
     if (upgrade) upgrade.apply(p);
     p.pendingUpgradeChoice = false;
   });
+
+  socket.on('ping', () => socket.emit('pong'));
 
   socket.on('disconnect', () => {
     const p = players[socket.id];

@@ -53,11 +53,12 @@ scene.add(muzzleLight);
 // ---------------------------------------------------------------------------
 // НАСТРОЙКИ ГРАФИКИ
 // ---------------------------------------------------------------------------
-const settingsState = { quality: 'high', shadows: true, effects: true };
+const settingsState = { quality: 'high', shadows: true, effects: true, fov: 65, volume: 0.7 };
 try {
   Object.assign(settingsState, JSON.parse(localStorage.getItem('tanksGraphics') || '{}'));
 } catch (e) { /* ignore */ }
 const QUALITY_PIXEL_RATIO = { low: 1, medium: 1.25, high: 1.75 };
+let normalFov = settingsState.fov || NORMAL_FOV;
 
 function saveGraphicsSettings() {
   try { localStorage.setItem('tanksGraphics', JSON.stringify(settingsState)); } catch (e) { /* ignore */ }
@@ -69,20 +70,34 @@ function applyGraphicsSettings() {
   sunLight.castShadow = shadows;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, QUALITY_PIXEL_RATIO[settingsState.quality]));
   renderer.setSize(window.innerWidth, window.innerHeight);
+  if (settingsState.fov) {
+    normalFov = settingsState.fov;
+    camera.fov = normalFov;
+    camera.updateProjectionMatrix();
+  }
 }
 
 function initSettingsUI() {
   const settingsBtn = document.getElementById('settingsBtn');
+  const menuSettingsBtn = document.getElementById('menuSettingsBtn');
   const settingsPanel = document.getElementById('settingsPanel');
   const shadowsToggle = document.getElementById('shadowsToggle');
   const effectsToggle = document.getElementById('effectsToggle');
+  const fovSlider = document.getElementById('fovSlider');
+  const volumeSlider = document.getElementById('volumeSlider');
 
   settingsBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     settingsPanel.classList.toggle('hidden');
   });
+  menuSettingsBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    settingsPanel.classList.remove('hidden');
+  });
   document.addEventListener('click', (e) => {
-    if (!settingsPanel.contains(e.target) && e.target !== settingsBtn) settingsPanel.classList.add('hidden');
+    if (!settingsPanel.contains(e.target) && e.target !== settingsBtn && e.target !== menuSettingsBtn) {
+      settingsPanel.classList.add('hidden');
+    }
   });
   document.querySelectorAll('[data-quality]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -101,11 +116,23 @@ function initSettingsUI() {
     settingsState.effects = effectsToggle.checked;
     saveGraphicsSettings();
   });
+  fovSlider.addEventListener('input', () => {
+    settingsState.fov = Number(fovSlider.value);
+    saveGraphicsSettings();
+    applyGraphicsSettings();
+  });
+  volumeSlider.addEventListener('input', () => {
+    settingsState.volume = Number(volumeSlider.value) / 100;
+    saveGraphicsSettings();
+    shotSound.volume = settingsState.volume;
+  });
 
   function updateSettingsUI() {
     document.querySelectorAll('[data-quality]').forEach(b => b.classList.toggle('active', b.dataset.quality === settingsState.quality));
     shadowsToggle.checked = settingsState.shadows;
     effectsToggle.checked = settingsState.effects;
+    fovSlider.value = settingsState.fov;
+    volumeSlider.value = Math.round(settingsState.volume * 100);
   }
   window.updateSettingsUI = updateSettingsUI;
   updateSettingsUI();
@@ -253,6 +280,25 @@ const nicknameOverlay = document.getElementById('nicknameOverlay');
 const nicknameInput = document.getElementById('nicknameInput');
 const startBtn = document.getElementById('startBtn');
 
+const TANK_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#ff6fa4'];
+let selectedColor = null;
+
+function buildColorPicker() {
+  const wrap = document.getElementById('colorSwatches');
+  TANK_COLORS.forEach(c => {
+    const s = document.createElement('div');
+    s.className = 'swatch';
+    s.style.background = c;
+    s.dataset.color = c;
+    s.addEventListener('click', () => {
+      selectedColor = c;
+      wrap.querySelectorAll('.swatch').forEach(x => x.classList.toggle('selected', x === s));
+    });
+    wrap.appendChild(s);
+  });
+}
+buildColorPicker();
+
 nicknameInput.focus();
 startBtn.addEventListener('click', startGame);
 nicknameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') startGame(); });
@@ -261,17 +307,17 @@ function startGame() {
   const nickname = nicknameInput.value.trim();
   unlockAudio(); // разблокируем звук по жесту пользователя
   nicknameOverlay.classList.add('hidden');
-  connectToServer(nickname);
+  connectToServer(nickname, selectedColor);
 }
 
 // ---------------------------------------------------------------------------
 // ПОДКЛЮЧЕНИЕ К СЕРВЕРУ
 // ---------------------------------------------------------------------------
-function connectToServer(nickname) {
+function connectToServer(nickname, color) {
   socket = io();
 
   socket.on('connect', () => {
-    socket.emit('join', { nickname });
+    socket.emit('join', { nickname, color });
   });
 
   socket.on('init', (data) => {
@@ -301,7 +347,20 @@ function connectToServer(nickname) {
     spawnExplosion(data.x, data.z);
     if (data.barrel) breakOffBarrel(data.id);
   });
+
+  socket.on('pong', () => {
+    pingMs = Date.now() - pingSentAt;
+  });
 }
+
+// Замер пинга каждые 2 секунды
+let pingMs = null;
+let pingSentAt = 0;
+setInterval(() => {
+  if (!socket || !socket.connected || !selfId) return;
+  pingSentAt = Date.now();
+  socket.emit('ping');
+}, 2000);
 
 // ---------------------------------------------------------------------------
 // ВВОД: клавиатура
@@ -435,12 +494,21 @@ const hpBarFill = document.getElementById('hpBarFill');
 const hpText = document.getElementById('hpText');
 const reloadBarFill = document.getElementById('reloadBarFill');
 const reloadText = document.getElementById('reloadText');
+const pingText = document.getElementById('pingText');
 let lastHp = null;
 let lastShotAt = -Infinity;
 
 function updateHUD() {
   const me = currentState.players.find(p => p.id === selfId);
   if (!me) return;
+
+  // Пинг
+  if (pingMs == null) {
+    pingText.textContent = 'Пинг: —';
+  } else {
+    pingText.textContent = `Пинг: ${pingMs} мс`;
+    pingText.style.color = pingMs < 80 ? '#2ecc71' : pingMs < 160 ? '#f1c40f' : '#e74c3c';
+  }
 
   if (lastHp !== null && me.hp < lastHp) addShake(1.1); // попали — трясём камеру
   lastHp = me.hp;
@@ -902,7 +970,7 @@ function destroyTank(mesh) {
 const shotSound = new Audio('vystrel-tanka.mp3');
 shotSound.preload = 'auto';
 shotSound.load();
-shotSound.volume = 0.7;
+shotSound.volume = settingsState.volume;
 
 function unlockAudio() {
   const p = shotSound.play();
@@ -924,7 +992,7 @@ const chaseCamOffset = new THREE.Vector3(0, 0, 0);
 const camLookTarget = new THREE.Vector3(0, 12, 0);
 const _camDesired = new THREE.Vector3();
 const _camTarget = new THREE.Vector3();
-let currentFov = NORMAL_FOV;
+let currentFov = normalFov;
 
 function updateCamera(players) {
   const me = players.find(p => p.id === selfId);
@@ -934,7 +1002,7 @@ function updateCamera(players) {
   if (!mesh) return;
 
   // Плавный переход зума (FOV) между обычным видом и прицелом
-  const targetFov = isScoped ? SCOPE_FOV : NORMAL_FOV;
+  const targetFov = isScoped ? SCOPE_FOV : normalFov;
   currentFov = lerp(currentFov, targetFov, 0.15);
   if (Math.abs(camera.fov - currentFov) > 0.01) {
     camera.fov = currentFov;
