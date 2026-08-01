@@ -22,7 +22,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ---------------------------------------------------------------------------
 // НАСТРОЙКИ ИГРЫ
 // ---------------------------------------------------------------------------
-const WORLD = { width: 2000, depth: 2000 }; // размеры карты по X и Z
+const WORLD = { width: 6000, depth: 6000 }; // размеры карты по X и Z
 const TICK_RATE = 60;
 const TANK_RADIUS = 20;
 const TANK_BASE_SPEED = 160;        // px(units)/сек вперёд-назад
@@ -76,7 +76,7 @@ const PICKUP_TYPES = [
   { type: 'speed', color: '#f1c40f', radius: 32 },
   { type: 'rapid', color: '#e74c3c', radius: 32 },
 ];
-const PICKUP_COUNT = 8;
+const PICKUP_COUNT = 14;
 const PICKUP_RESPAWN_MS = 10000;
 const PICKUP_POSITIONS = generatePickupPositions();
 
@@ -90,7 +90,7 @@ const TRAMPOLINES = generateTrampolines();
 function generateTrampolines() {
   const positions = [];
   let attempts = 0;
-  while (positions.length < 4 && attempts < 500) {
+  while (positions.length < 6 && attempts < 500) {
     attempts++;
     const x = 250 + Math.random() * (WORLD.width - 500);
     const z = 250 + Math.random() * (WORLD.depth - 500);
@@ -166,12 +166,12 @@ const ABILITY_POOL = [
 function generateObstacles() {
   const list = [];
 
-  // Крупные блоки и скалы (сетка 7x7, шахматный порядок)
-  const cols = 7, rows = 7;
+  // Крупные блоки и скалы (сетка 19x19, шахматный порядок)
+  const cols = 19, rows = 19;
   for (let i = 0; i < cols; i++) {
     for (let j = 0; j < rows; j++) {
       if ((i + j) % 2 === 0) continue;
-      if (i === 3 && j === 3) continue; // центр свободен
+      if (i === 9 && j === 9) continue; // центр свободен
       const w = 80 + Math.random() * 50;
       const d = 80 + Math.random() * 50;
       const x = 150 + i * (WORLD.width - 300) / (cols - 1) - w / 2;
@@ -181,7 +181,7 @@ function generateObstacles() {
   }
 
   // Разбросанные ящики
-  for (let k = 0; k < 30; k++) {
+  for (let k = 0; k < 90; k++) {
     const w = 28 + Math.random() * 18;
     const d = 28 + Math.random() * 18;
     const x = 150 + Math.random() * (WORLD.width - 300 - w);
@@ -195,8 +195,8 @@ function generateObstacles() {
   }
 
   // Деревья (с коллизией)
-  let trees = 0, attempts = 500;
-  while (trees < 60 && attempts-- > 0) {
+  let trees = 0, attempts = 1500;
+  while (trees < 180 && attempts-- > 0) {
     const s = 14;
     const x = 120 + Math.random() * (WORLD.width - 240);
     const z = 120 + Math.random() * (WORLD.depth - 240);

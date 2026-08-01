@@ -29,7 +29,7 @@ function createClouds() {
       mesh.scale.y = 0.45;
       group.add(mesh);
     }
-    group.position.set(Math.random() * 2000, 750 + Math.random() * 250, Math.random() * 2000);
+    group.position.set(200 + Math.random() * 5800, 750 + Math.random() * 250, 200 + Math.random() * 5800);
     scene.add(group);
     clouds.push({ group, speed: 3 + Math.random() * 6 });
   }
@@ -39,13 +39,13 @@ createClouds();
 function updateClouds(dt) {
   clouds.forEach(c => {
     c.group.position.x += c.speed * dt;
-    if (c.group.position.x > 2200) c.group.position.x = -200;
+    if (c.group.position.x > 6100) c.group.position.x = -200;
   });
 }
 
 const NORMAL_FOV = 65;
 const SCOPE_FOV = 20;
-const camera = new THREE.PerspectiveCamera(NORMAL_FOV, window.innerWidth / window.innerHeight, 0.1, 3000);
+const camera = new THREE.PerspectiveCamera(NORMAL_FOV, window.innerWidth / window.innerHeight, 0.1, 9000);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -79,6 +79,7 @@ sunLight.shadow.camera.top = 800;
 sunLight.shadow.camera.bottom = -800;
 sunLight.shadow.mapSize.set(2048, 2048);
 scene.add(sunLight);
+scene.add(sunLight.target); // тени следуют за игроком
 
 // Вспышка у дула (общий свет для всех выстрелов)
 const muzzleLight = new THREE.PointLight(0xffaa44, 0, 240);
@@ -185,7 +186,7 @@ initSettingsUI();
 // ---------------------------------------------------------------------------
 // МИР (заполняется после получения init от сервера)
 // ---------------------------------------------------------------------------
-let world = { width: 2000, depth: 2000 };
+let world = { width: 6000, depth: 6000 };
 let obstaclesData = [];
 let maxHp = 100;
 
@@ -193,7 +194,7 @@ function buildGround() {
   const geo = new THREE.PlaneGeometry(world.width, world.depth);
   const grassTex = new THREE.TextureLoader().load('texture/grass-6.jpg');
   grassTex.wrapS = grassTex.wrapT = THREE.RepeatWrapping;
-  grassTex.repeat.set(80, 80);
+  grassTex.repeat.set(240, 240);
   grassTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   const mat = new THREE.MeshStandardMaterial({ map: grassTex });
   const ground = new THREE.Mesh(geo, mat);
@@ -2472,6 +2473,10 @@ function updateCamera(players) {
 
   const mesh = tankMeshes.get(selfId);
   if (!mesh) return;
+
+  // Солнце и его тени следуют за игроком
+  sunLight.position.set(me.x + 300, 500, me.z + 200);
+  sunLight.target.position.set(me.x, 0, me.z);
 
   // Плавный переход зума (FOV) между обычным видом и прицелом
   const targetFov = isScoped ? SCOPE_FOV : normalFov;
