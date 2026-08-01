@@ -22,6 +22,7 @@
       <span id="reloadText">ГОТОВО</span>
     </div>
     <div id="controlsHint">W/S — вперёд/назад · A/D — поворот · Мышь — прицел башней · ЛКМ — огонь · ПКМ (зажать) — прицел от 1 лица · Q/E — камера · Колесо — зум</div>
+    <div id="activeEffects"></div>
   </div>
 
   <!-- Пинг -->
@@ -73,11 +74,19 @@
     </div>
   </div>
 
-  <!-- Окно выбора прокачки -->
-  <div id="upgradeOverlay" class="hidden">
-    <div id="upgradeBox">
-      <h2>🎖️ Выбери улучшение!</h2>
-      <div id="upgradeOptions"></div>
+  <!-- Рулетка способностей -->
+  <div id="rouletteOverlay" class="hidden">
+    <div id="rouletteBox">
+      <h2>🎰 ТРИ КИЛА — РУЛЕТКА!</h2>
+      <div id="rouletteViewport">
+        <div id="roulettePointer"></div>
+        <div id="rouletteStrip"></div>
+      </div>
+      <div id="rouletteResult" class="hidden">
+        <div id="rouletteResultName"></div>
+        <div id="rouletteResultDesc"></div>
+        <button id="rouletteOkBtn">ОТЛИЧНО!</button>
+      </div>
     </div>
   </div>
 

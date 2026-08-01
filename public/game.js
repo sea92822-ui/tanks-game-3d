@@ -350,8 +350,8 @@ function connectToServer(nickname, color) {
     checkDeathScreen();
   });
 
-  socket.on('offerUpgrade', (options) => {
-    showUpgradeChoice(options);
+  socket.on('roulette', (data) => {
+    spinRoulette(data.ability);
   });
 
   socket.on('hit', (data) => {
@@ -550,6 +550,26 @@ function updateHUD() {
     reloadBarFill.style.background = '#f39c12';
     reloadText.textContent = 'ПЕРЕЗАРЯДКА';
   }
+
+  updateActiveEffects(me.effects || []);
+}
+
+// ---------------------------------------------------------------------------
+// Бейджи активных способностей
+// ---------------------------------------------------------------------------
+const activeEffectsEl = document.getElementById('activeEffects');
+let activeEffectsCache = '';
+
+function updateActiveEffects(effects) {
+  const key = effects.map(e => e.id + ':' + Math.ceil(e.remainingMs / 1000)).join(',');
+  if (key === activeEffectsCache) return;
+  activeEffectsCache = key;
+  activeEffectsEl.innerHTML = effects.map(e => {
+    const card = ABILITY_CARDS.find(c => c[0] === e.id);
+    if (!card) return '';
+    const sec = e.remainingMs < 0 ? '' : Math.ceil(e.remainingMs / 1000) + 'с';
+    return `<div class="effectBadge" style="background:${card[2]}"><span>${ABILITY_ICONS[card[0]] || '?'}</span><b>${sec}</b></div>`;
+  }).join('');
 }
 
 // ---------------------------------------------------------------------------
@@ -578,25 +598,97 @@ function escapeHtml(str) {
 }
 
 // ---------------------------------------------------------------------------
-// Выбор прокачки
+// РУЛЕТКА СПОСОБНОСТЕЙ
 // ---------------------------------------------------------------------------
-const upgradeOverlay = document.getElementById('upgradeOverlay');
-const upgradeOptions = document.getElementById('upgradeOptions');
+const ABILITY_CARDS = [
+  ['speed', 'Турбо', '#f39c12'], ['damage', 'Бронебойный', '#e74c3c'], ['reload', 'Скорострел', '#2ecc71'],
+  ['bulletsp', 'Быстрые пули', '#3498db'], ['triple', 'Веер', '#9b59b6'], ['heal', 'Ремнабор', '#27ae60'],
+  ['regen', 'Регенерация', '#1abc9c'], ['shield', 'Неуязвимость', '#f1c40f'], ['invis', 'Невидимость', '#95a5a6'],
+  ['fastturret', 'Острая башня', '#e67e22'], ['blast', 'Фугас', '#d35400'], ['freeze', 'Мороз', '#85c1e9'],
+  ['burn', 'Зажигательный', '#e74c3c'], ['lifesteal', 'Вампир', '#c0392b'], ['crit', 'Критик', '#f1c40f'],
+  ['pierce', 'Пробой', '#2980b9'], ['nuke', 'Ядерный удар', '#ff5722'], ['kamikaze', 'Камikадзе', '#c0392b'],
+  ['second', 'Второй шанс', '#16a085'], ['thorn', 'Шипы', '#7f8c8d'], ['rage', 'Ярость', '#e74c3c'],
+  ['emp', 'ЭМИ', '#8e44ad'], ['teleport', 'Телепорт', '#2c3e50'], ['storm', 'Гроза', '#3498db'],
+  ['jam', 'Глушитель', '#7d3c98'], ['armor', 'Броня', '#bdc3c7'], ['ricochet', 'Рикошет', '#48c9b0'],
+  ['overdrive', 'Перегрузка', '#f5b041'], ['sharp', 'Острота', '#d7bde2'], ['spin', 'Волчок', '#aed6f1'],
+];
+const ABILITY_ICONS = {
+  speed: '»', damage: '✖', reload: '≈', bulletsp: '→', triple: '⋀', heal: '+', regen: '✚',
+  shield: '⬢', invis: '◌', fastturret: '⟳', blast: '◉', freeze: '❄', burn: '🔥', lifesteal: '♥',
+  crit: '★', pierce: '↦', nuke: '☢', kamikaze: '☠', second: '✝', thorn: '♧', rage: '⚡',
+  emp: '〰', teleport: '⇤', storm: 'ϟ', jam: '✕', armor: '◆', ricochet: '⇄', overdrive: '⚙', sharp: '▲', spin: '⟲',
+};
 
-function showUpgradeChoice(options) {
-  upgradeOptions.innerHTML = '';
-  options.forEach(opt => {
-    const btn = document.createElement('button');
-    btn.className = 'upgradeChoice';
-    btn.textContent = opt.name;
-    btn.addEventListener('click', () => {
-      socket.emit('chooseUpgrade', opt.id);
-      upgradeOverlay.classList.add('hidden');
+const rouletteOverlay = document.getElementById('rouletteOverlay');
+const rouletteStrip = document.getElementById('rouletteStrip');
+const rouletteResult = document.getElementById('rouletteResult');
+const rouletteResultName = document.getElementById('rouletteResultName');
+const rouletteResultDesc = document.getElementById('rouletteResultDesc');
+const rouletteOkBtn = document.getElementById('rouletteOkBtn');
+const CELL_W = 128;
+
+let rouletteSpinning = false;
+let roulettePos = 0;
+
+// Лента из 3 повторов всех 30 карточек
+function buildRouletteStrip() {
+  rouletteStrip.innerHTML = '';
+  for (let rep = 0; rep < 3; rep++) {
+    ABILITY_CARDS.forEach((card, idx) => {
+      const cell = document.createElement('div');
+      cell.className = 'rouletteCell';
+      cell.style.background = `linear-gradient(180deg, ${card[2]}, ${card[2]}88)`;
+      cell.innerHTML = `<div class="rouletteIcon">${ABILITY_ICONS[card[0]] || '?'}</div><div class="rouletteLabel">${card[1]}</div>`;
+      cell.dataset.id = card[0];
+      cell.dataset.index = idx;
+      rouletteStrip.appendChild(cell);
     });
-    upgradeOptions.appendChild(btn);
-  });
-  upgradeOverlay.classList.remove('hidden');
+  }
 }
+buildRouletteStrip();
+
+function spinRoulette(ability) {
+  if (rouletteSpinning) return;
+  rouletteSpinning = true;
+  rouletteResult.classList.add('hidden');
+  rouletteOverlay.classList.remove('hidden');
+
+  const targetIdx = ABILITY_CARDS.findIndex(c => c[0] === ability.id);
+  const repeats = 3;
+  const finalPos = roulettePos + repeats * ABILITY_CARDS.length * CELL_W + targetIdx * CELL_W;
+
+  const startPos = roulettePos;
+  const duration = 4200;
+  const start = performance.now();
+
+  function frame(now) {
+    const t = Math.min((now - start) / duration, 1);
+    const ease = 1 - Math.pow(1 - t, 4); // easeOutQuart
+    roulettePos = startPos + (finalPos - startPos) * ease;
+    rouletteStrip.style.transform = `translateX(${-roulettePos}px)`;
+
+    if (t < 1) {
+      requestAnimationFrame(frame);
+    } else {
+      rouletteSpinning = false;
+      roulettePos %= ABILITY_CARDS.length * CELL_W;
+      rouletteStrip.style.transform = `translateX(${-roulettePos}px)`;
+      showRouletteResult(ability);
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+function showRouletteResult(ability) {
+  rouletteResultName.textContent = ability.name;
+  rouletteResultName.style.color = ability.color;
+  rouletteResultDesc.textContent = ability.desc;
+  rouletteResult.classList.remove('hidden');
+}
+
+rouletteOkBtn.addEventListener('click', () => {
+  rouletteOverlay.classList.add('hidden');
+});
 
 // ---------------------------------------------------------------------------
 // Экран смерти
@@ -717,6 +809,16 @@ function syncTanks(players) {
     mesh.position.set(p.x, 0, p.z);
     mesh.rotation.y = p.chassisAngle;
     mesh.userData.turretPivot.rotation.y = p.turretAngle - p.chassisAngle;
+
+    // «Невидимость» — полупрозрачный танк
+    const invis = (p.effects || []).some(e => e.id === 'invis');
+    if (invis && mesh.userData.invisible !== true) {
+      mesh.userData.invisible = true;
+      mesh.traverse(o => { if (o.isMesh) { o.material.transparent = true; o.material.opacity = 0.15; } });
+    } else if (!invis && mesh.userData.invisible === true) {
+      mesh.userData.invisible = false;
+      mesh.traverse(o => { if (o.isMesh) { o.material.transparent = true; o.material.opacity = 1; } });
+    }
   });
 
   // Удаляем меши отключившихся игроков

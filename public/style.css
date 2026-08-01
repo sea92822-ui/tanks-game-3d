@@ -379,7 +379,7 @@ html, body {
 /* ---------- Overlays общие ---------- */
 .hidden { display: none !important; }
 
-#nicknameOverlay, #upgradeOverlay, #deathOverlay {
+#nicknameOverlay, #rouletteOverlay, #deathOverlay {
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.75);
@@ -389,7 +389,7 @@ html, body {
   z-index: 100;
 }
 
-#nicknameBox, #upgradeBox, #deathBox {
+#nicknameBox, #rouletteBox, #deathBox {
   background: #232323;
   border: 2px solid #444;
   border-radius: 12px;
@@ -427,7 +427,7 @@ html, body {
   border-color: #f1c40f;
 }
 
-#startBtn, .upgradeChoice {
+#startBtn {
   display: block;
   width: 100%;
   padding: 12px;
@@ -441,27 +441,9 @@ html, body {
   transition: transform 0.1s ease, filter 0.1s ease;
 }
 
-#startBtn:hover, .upgradeChoice:hover {
+#startBtn:hover {
   filter: brightness(1.15);
   transform: translateY(-2px);
-}
-
-#upgradeBox h2 {
-  margin-bottom: 20px;
-  color: #f1c40f;
-}
-
-#upgradeOptions {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: 320px;
-}
-
-.upgradeChoice {
-  background: linear-gradient(135deg, #2980b9, #1f618d);
-  text-align: left;
-  padding: 16px;
 }
 
 #deathBox h2 {
@@ -472,4 +454,141 @@ html, body {
 #respawnTimer {
   color: #ccc;
   font-size: 15px;
+}
+
+/* ---------- Рулетка способностей ---------- */
+#rouletteBox h2 {
+  color: #f1c40f;
+  margin-bottom: 20px;
+  font-size: 24px;
+}
+
+#rouletteViewport {
+  position: relative;
+  width: 132px;
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: 10px;
+  box-shadow: 0 0 30px rgba(241, 196, 15, 0.35);
+  background: #111;
+}
+
+#roulettePointer {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 14px solid transparent;
+  border-right: 14px solid transparent;
+  border-top: 18px solid #f1c40f;
+  z-index: 5;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8));
+}
+
+#rouletteStrip {
+  display: flex;
+  will-change: transform;
+}
+
+.rouletteCell {
+  width: 120px;
+  min-width: 120px;
+  height: 130px;
+  margin: 8px 4px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #fff;
+  text-shadow: 1px 1px 3px rgba(0,0,0,0.8);
+  border: 2px solid rgba(255,255,255,0.35);
+  user-select: none;
+}
+
+.rouletteIcon {
+  font-size: 34px;
+  line-height: 1;
+}
+
+.rouletteLabel {
+  font-size: 12px;
+  font-weight: bold;
+  text-align: center;
+  line-height: 1.2;
+}
+
+#rouletteResult {
+  margin-top: 18px;
+  padding: 14px 24px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.2);
+}
+
+#rouletteResultName {
+  font-size: 22px;
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+
+#rouletteResultDesc {
+  font-size: 14px;
+  color: #ddd;
+  margin-bottom: 12px;
+}
+
+#rouletteOkBtn {
+  padding: 10px 34px;
+  font-size: 15px;
+  font-weight: bold;
+  border: none;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #f1c40f, #e67e22);
+  color: #222;
+  cursor: pointer;
+}
+
+#rouletteOkBtn:hover {
+  filter: brightness(1.15);
+}
+
+/* ---------- Бейджи активных способностей ---------- */
+#activeEffects {
+  position: absolute;
+  bottom: 58px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.effectBadge {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  text-shadow: 1px 1px 3px rgba(0,0,0,0.9);
+  border: 2px solid rgba(255,255,255,0.5);
+  font-size: 18px;
+  animation: badgeIn 0.3s ease;
+}
+
+.effectBadge b {
+  font-size: 10px;
+  line-height: 1;
+}
+
+@keyframes badgeIn {
+  from { transform: scale(0.5); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }

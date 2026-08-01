@@ -34,16 +34,46 @@ const BULLET_BASE_DAMAGE = 34;
 const BASE_RELOAD_MS = 2000;
 const RESPAWN_DELAY_MS = 2500;
 const MAX_HP = 100;
-const KILLS_FOR_UPGRADE = 3;
+const KILLS_FOR_ROULETTE = 3;
 const OBSTACLES = generateObstacles();
 
-const UPGRADE_POOL = [
-  { id: 'speed',    name: '+30% к скорости танка',        apply: p => { p.speedMult *= 1.3; } },
-  { id: 'triple',   name: 'Стрельба тремя пулями веером',  apply: p => { p.tripleShot = true; } },
-  { id: 'damage',   name: '+40% урона снаряда',            apply: p => { p.damageMult *= 1.4; } },
-  { id: 'reload',   name: 'Перезарядка в 2 раза быстрее',  apply: p => { p.reloadMult *= 0.5; } },
-  { id: 'hp',       name: '+50 максимального HP',          apply: p => { p.maxHp += 50; p.hp += 50; } },
-  { id: 'bulletsp', name: 'Снаряды летят на 25% быстрее',  apply: p => { p.bulletSpeedMult *= 1.25; } },
+// ---------------------------------------------------------------------------
+// РУЛЕТКА СПОСОБНОСТЕЙ (30 штук)
+// instant — срабатывает мгновенно при выпадении
+// passive — действует до конца жизни танка
+// остальные — временный бафф на dur мс
+// ---------------------------------------------------------------------------
+const ABILITY_POOL = [
+  { id: 'speed',      name: 'Турбо',           desc: '+35% скорости танка на 12 сек',                     color: '#f39c12', dur: 12000 },
+  { id: 'damage',     name: 'Бронебойный',     desc: '+50% урона снарядов на 12 сек',                      color: '#e74c3c', dur: 12000 },
+  { id: 'reload',     name: 'Скорострел',      desc: 'Перезарядка в 2 раза быстрее на 12 сек',             color: '#2ecc71', dur: 12000 },
+  { id: 'bulletsp',   name: 'Быстрые пули',    desc: 'Снаряды летят на 30% быстрее на 12 сек',             color: '#3498db', dur: 12000 },
+  { id: 'triple',     name: 'Веер',            desc: 'Тройной выстрел веером на 10 сек',                   color: '#9b59b6', dur: 10000 },
+  { id: 'heal',       name: 'Ремнабор',        desc: '+60 HP мгновенно',                                   color: '#27ae60', instant: true },
+  { id: 'regen',      name: 'Регенерация',     desc: '+3 HP в секунду на 10 сек',                          color: '#1abc9c', dur: 10000 },
+  { id: 'shield',     name: 'Неуязвимость',    desc: 'Полная защита на 4 сек',                             color: '#f1c40f', dur: 4000 },
+  { id: 'invis',      name: 'Невидимость',     desc: 'Почти невидимый на 8 сек',                           color: '#95a5a6', dur: 8000 },
+  { id: 'fastturret', name: 'Острая башня',    desc: 'Башня вращается в 2 раза быстрее на 12 сек',         color: '#e67e22', dur: 12000 },
+  { id: 'blast',      name: 'Фугас',           desc: 'Снаряды взрываются по площади на 12 сек',            color: '#d35400', dur: 12000 },
+  { id: 'freeze',     name: 'Мороз',           desc: 'Попадания замедляют цель на 40% на 12 сек',          color: '#85c1e9', dur: 12000 },
+  { id: 'burn',       name: 'Зажигательный',   desc: 'Попадания поджигают: 2 HP/с на 12 сек',              color: '#e74c3c', dur: 12000 },
+  { id: 'lifesteal',  name: 'Вампир',          desc: 'Лечит 25% нанесённого урона на 12 сек',              color: '#c0392b', dur: 12000 },
+  { id: 'crit',       name: 'Критик',          desc: '25% шанс двойного урона на 15 сек',                  color: '#f1c40f', dur: 15000 },
+  { id: 'pierce',     name: 'Пробой',          desc: 'Снаряд пробивает 1 врага насквозь на 12 сек',        color: '#2980b9', dur: 12000 },
+  { id: 'nuke',       name: 'Ядерный удар',    desc: 'Взрыв вокруг себя: 50 урона всем рядом',             color: '#ff5722', instant: true },
+  { id: 'kamikaze',   name: 'Камikадзе',       desc: 'При гибели взрыв 60 урона всем рядом',               color: '#c0392b', passive: true },
+  { id: 'second',     name: 'Второй шанс',     desc: 'При смертельном ударе остаётся 5 HP',                color: '#16a085', passive: true },
+  { id: 'thorn',      name: 'Шипы',            desc: '25% полученного урона возвращается стрелку',         color: '#7f8c8d', passive: true },
+  { id: 'rage',       name: 'Ярость',          desc: '+15% урона за каждый кил (до конца жизни)',          color: '#e74c3c', passive: true },
+  { id: 'emp',        name: 'ЭМИ',             desc: 'Все враги замедлены на 30% на 4 сек',                color: '#8e44ad', instant: true },
+  { id: 'teleport',   name: 'Телепорт',        desc: 'Мгновенный прыжок вперёд на 200',                    color: '#2c3e50', instant: true },
+  { id: 'storm',      name: 'Гроза',           desc: 'Молнии бьют по врагам каждые 1.5 сек (8 сек)',       color: '#3498db', dur: 8000 },
+  { id: 'jam',        name: 'Глушитель',       desc: 'Попадания сбивают перезарядку цели на 12 сек',       color: '#7d3c98', dur: 12000 },
+  { id: 'armor',      name: 'Броня',           desc: '−25% получаемого урона на 12 сек',                   color: '#bdc3c7', dur: 12000 },
+  { id: 'ricochet',   name: 'Рикошет',         desc: 'Снаряд отскакивает от стены 1 раз (15 сек)',         color: '#48c9b0', dur: 15000 },
+  { id: 'overdrive',  name: 'Перегрузка',      desc: 'Всё на 15% быстрее: движение, выстрелы, башня (8 сек)', color: '#f5b041', dur: 8000 },
+  { id: 'sharp',      name: 'Острота',         desc: '+15% урона навсегда',                                color: '#d7bde2', passive: true },
+  { id: 'spin',       name: 'Волчок',          desc: 'Корпус поворачивается в 1.8 раза быстрее на 12 сек', color: '#aed6f1', dur: 12000 },
 ];
 
 function generateObstacles() {
@@ -156,17 +186,20 @@ function createPlayer(id, nickname, color) {
     alive: true,
     kills: 0,
     deaths: 0,
-    speedMult: 1,
     damageMult: 1,
-    reloadMult: 1,
-    bulletSpeedMult: 1,
-    tripleShot: false,
+    buffs: {},        // временные способности: id -> { until }
+    flags: {},        // пассивные способности: id -> true
+    rageKills: 0,     // килы с активной «Яростью»
+    jamUntil: 0,      // «Глушитель»: до этого момента нельзя стрелять
     input: { forward: false, back: false, left: false, right: false, targetTurretAngle: 0, shooting: false },
     lastShotTime: 0,
     respawnAt: 0,
-    pendingUpgradeChoice: false,
     killsSinceUpgrade: 0,
   };
+}
+
+function buffActive(p, id) {
+  return p.buffs[id] && p.buffs[id].until > Date.now();
 }
 
 // ---------------------------------------------------------------------------
@@ -199,14 +232,6 @@ io.on('connection', (socket) => {
     p.input.right = !!input.right;
     if (typeof input.targetTurretAngle === 'number') p.input.targetTurretAngle = input.targetTurretAngle;
     p.input.shooting = !!input.shooting;
-  });
-
-  socket.on('chooseUpgrade', (upgradeId) => {
-    const p = players[socket.id];
-    if (!p || !p.pendingUpgradeChoice) return;
-    const upgrade = UPGRADE_POOL.find(u => u.id === upgradeId);
-    if (upgrade) upgrade.apply(p);
-    p.pendingUpgradeChoice = false;
   });
 
   socket.on('latencyReq', () => socket.emit('latencyRes'));
@@ -242,8 +267,7 @@ function tick() {
       continue;
     }
 
-    if (p.pendingUpgradeChoice) continue;
-
+    processBuffs(p, dt, now);
     updatePlayerMovement(p, dt);
     updatePlayerShooting(p, now);
   }
@@ -253,12 +277,22 @@ function tick() {
 }
 
 function updatePlayerMovement(p, dt) {
-  // Поворот корпуса (A/D)
-  if (p.input.left) p.chassisAngle += TANK_TURN_SPEED * dt;
-  if (p.input.right) p.chassisAngle -= TANK_TURN_SPEED * dt;
+  // Поворот корпуса (A/D) — «Волчок» ускоряет, «ЭМИ»/«Мороз» замедляют
+  let turnMult = 1;
+  if (buffActive(p, 'spin')) turnMult *= 1.8;
+  if (buffActive(p, 'overdrive')) turnMult *= 1.15;
+  if (buffActive(p, 'emp')) turnMult *= 0.7;
+  if (buffActive(p, 'slow')) turnMult *= 0.6;
+  if (p.input.left) p.chassisAngle += TANK_TURN_SPEED * turnMult * dt;
+  if (p.input.right) p.chassisAngle -= TANK_TURN_SPEED * turnMult * dt;
 
   // Движение вперёд/назад по направлению корпуса (W/S)
-  const speed = TANK_BASE_SPEED * p.speedMult;
+  let speedMult = 1;
+  if (buffActive(p, 'speed')) speedMult *= 1.35;
+  if (buffActive(p, 'overdrive')) speedMult *= 1.15;
+  if (buffActive(p, 'emp')) speedMult *= 0.7;
+  if (buffActive(p, 'slow')) speedMult *= 0.6;
+  const speed = TANK_BASE_SPEED * speedMult;
   let dir = 0;
   if (p.input.forward) dir += 1;
   if (p.input.back) dir -= 1;
@@ -270,7 +304,46 @@ function updatePlayerMovement(p, dt) {
   }
 
   // Башня плавно доворачивается к углу, присланному клиентом
-  p.turretAngle = lerpAngle(p.turretAngle, p.input.targetTurretAngle, TURRET_TURN_SPEED * dt);
+  let turretMult = 1;
+  if (buffActive(p, 'fastturret')) turretMult *= 2;
+  if (buffActive(p, 'overdrive')) turretMult *= 1.4;
+  p.turretAngle = lerpAngle(p.turretAngle, p.input.targetTurretAngle, TURRET_TURN_SPEED * turretMult * dt);
+}
+
+// Обработка временных способностей (регенерация, гроза, поджог, истечение)
+function processBuffs(p, dt, now) {
+  for (const id in p.buffs) {
+    const b = p.buffs[id];
+    if (b.until <= now) {
+      delete p.buffs[id];
+      continue;
+    }
+    if (id === 'regen') {
+      p.hp = Math.min(p.maxHp, p.hp + 3 * dt);
+    }
+    if (id === 'burn') {
+      p.hp -= 2 * dt;
+      if (p.hp <= 0) {
+        p.alive = false;
+        p.deaths += 1;
+        p.respawnAt = now + RESPAWN_DELAY_MS;
+        p.buffs = {};
+        p.flags = {};
+        p.rageKills = 0;
+        p.damageMult = 1;
+      }
+    }
+    if (id === 'storm') {
+      if (now >= b.next) {
+        b.next = now + 1500;
+        const targets = Object.values(players).filter(v => v.alive && v.id !== p.id);
+        if (targets.length) {
+          const target = targets[Math.floor(Math.random() * targets.length)];
+          dealDamage(target, 15, p.id, target.x, target.z);
+        }
+      }
+    }
+  }
 }
 
 function tryMove(p, newX, newZ) {
@@ -294,7 +367,11 @@ function lerpAngle(a, b, t) {
 
 function updatePlayerShooting(p, now) {
   if (!p.input.shooting) return;
-  const reloadTime = BASE_RELOAD_MS * p.reloadMult;
+  if (now < p.jamUntil) return; // «Глушитель» — цель не может стрелять
+  let reloadMult = 1;
+  if (buffActive(p, 'reload')) reloadMult *= 0.5;
+  if (buffActive(p, 'overdrive')) reloadMult *= 0.85;
+  const reloadTime = BASE_RELOAD_MS * reloadMult;
   if (now - p.lastShotTime < reloadTime) return;
 
   p.lastShotTime = now;
@@ -302,21 +379,38 @@ function updatePlayerShooting(p, now) {
 }
 
 function fireBullet(p) {
-  const angles = p.tripleShot
+  const angles = buffActive(p, 'triple')
     ? [p.turretAngle - 0.18, p.turretAngle, p.turretAngle + 0.18]
     : [p.turretAngle];
 
+  let speedMult = 1;
+  if (buffActive(p, 'bulletsp')) speedMult *= 1.3;
+  if (buffActive(p, 'overdrive')) speedMult *= 1.15;
+
   for (const angle of angles) {
+    let dmg = BULLET_BASE_DAMAGE * p.damageMult;
+    if (buffActive(p, 'damage')) dmg *= 1.5;
+    if (buffActive(p, 'overdrive')) dmg *= 1.15;
+    if (p.flags.rage) dmg *= 1 + 0.15 * p.rageKills;
+    if (buffActive(p, 'crit') && Math.random() < 0.25) dmg *= 2;
+
     const spawnDist = TANK_RADIUS + 14;
     bullets.push({
       id: bulletIdCounter++,
       ownerId: p.id,
       x: p.x + Math.sin(angle) * spawnDist,
       z: p.z + Math.cos(angle) * spawnDist,
-      vx: Math.sin(angle) * BULLET_SPEED * p.bulletSpeedMult,
-      vz: Math.cos(angle) * BULLET_SPEED * p.bulletSpeedMult,
-      damage: BULLET_BASE_DAMAGE * p.damageMult,
+      vx: Math.sin(angle) * BULLET_SPEED * speedMult,
+      vz: Math.cos(angle) * BULLET_SPEED * speedMult,
+      damage: dmg,
       ownerColor: p.color,
+      ricochet: buffActive(p, 'ricochet') ? 1 : 0,
+      pierce: buffActive(p, 'pierce') ? 1 : 0,
+      hitIds: [],
+      freeze: buffActive(p, 'freeze'),
+      burn: buffActive(p, 'burn'),
+      jam: buffActive(p, 'jam'),
+      blast: buffActive(p, 'blast'),
     });
   }
 }
@@ -334,6 +428,15 @@ function updateBullets(dt, now) {
 
     const hitObstacle = OBSTACLES.some(o => circleRectCollision(b.x, b.z, BULLET_RADIUS, o));
     if (hitObstacle) {
+      if (b.ricochet > 0) {
+        // «Рикошет»: снаряд отскакивает от препятствия 1 раз
+        b.ricochet--;
+        b.x -= b.vx * dt;
+        b.z -= b.vz * dt;
+        b.vx = -b.vx;
+        b.vz = -b.vz;
+        continue;
+      }
       io.emit('bulletBlocked', { x: b.x, z: b.z, ownerId: b.ownerId });
       bullets.splice(i, 1);
       continue;
@@ -347,7 +450,13 @@ function updateBullets(dt, now) {
       const dx = p.x - b.x, dz = p.z - b.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
       if (dist < TANK_RADIUS + BULLET_RADIUS) {
-        applyDamage(p, b, now);
+        if (b.pierce > 0 && b.hitIds.includes(p.id)) continue;
+        dealDamage(p, b.damage, b.ownerId, b.x, b.z, b, now);
+        if (b.pierce > 0 && p.hp > 0) {
+          // «Пробой»: снаряд летит дальше и не может дважды задеть эту цель
+          b.hitIds.push(p.id);
+          continue;
+        }
         hit = true;
         break;
       }
@@ -357,32 +466,135 @@ function updateBullets(dt, now) {
   }
 }
 
-function applyDamage(target, bullet, now) {
-  target.hp -= bullet.damage;
+// Мгновенные способности из рулетки
+function applyInstantAbility(ab, p, now) {
+  switch (ab.id) {
+    case 'heal':
+      p.hp = Math.min(p.maxHp, p.hp + 60);
+      break;
+    case 'nuke': {
+      for (const id in players) {
+        const t = players[id];
+        if (t.alive && t.id !== p.id && Math.hypot(t.x - p.x, t.z - p.z) < 150) {
+          dealDamage(t, 50, p.id, t.x, t.z, null, now);
+        }
+      }
+      break;
+    }
+    case 'emp': {
+      for (const id in players) {
+        const t = players[id];
+        if (t.alive && t.id !== p.id) t.buffs.emp = { until: now + 4000 };
+      }
+      break;
+    }
+    case 'teleport': {
+      const nx = p.x + Math.sin(p.chassisAngle) * 200;
+      const nz = p.z + Math.cos(p.chassisAngle) * 200;
+      tryMove(p, nx, nz);
+      break;
+    }
+  }
+}
+
+// Выдать случайную способность и запустить рулетку на клиенте
+function grantAbility(p, now) {
+  const candidates = ABILITY_POOL.filter(a => !(p.buffs[a.id] && p.buffs[a.id].until > now));
+  if (!candidates.length) return;
+  const ab = candidates[Math.floor(Math.random() * candidates.length)];
+
+  if (ab.instant) {
+    applyInstantAbility(ab, p, now);
+  } else if (ab.passive) {
+    p.flags[ab.id] = true;
+  } else {
+    p.buffs[ab.id] = { until: now + ab.dur, next: 0 };
+  }
+
+  io.to(p.id).emit('roulette', {
+    ability: { id: ab.id, name: ab.name, desc: ab.desc, color: ab.color }
+  });
+}
+
+function dealDamage(target, amount, attackerId, x, z, bullet, now) {
+  if (!target.alive) return;
+  if (buffActive(target, 'shield')) {
+    // «Неуязвимость» — урон не проходит, но попадание видно
+    io.emit('hit', { x, z, color: target.color, id: target.id, barrel: false, ownerId: attackerId });
+    return;
+  }
+
+  let dmg = amount;
+  if (buffActive(target, 'armor')) dmg *= 0.75;
+  target.hp -= dmg;
+
+  const attacker = players[attackerId];
+  if (attacker) {
+    if (buffActive(attacker, 'lifesteal')) attacker.hp = Math.min(attacker.maxHp, attacker.hp + dmg * 0.25);
+    if (target.flags.thorn && attacker.id !== target.id) {
+      dealDamage(attacker, dmg * 0.25, target.id, attacker.x, attacker.z, null, now);
+    }
+    if (bullet && bullet.freeze) target.buffs.slow = { until: now + 3000 };
+    if (bullet && bullet.burn) target.buffs.burn = { until: now + 3000 };
+    if (bullet && bullet.jam) target.jamUntil = now + 2000;
+    if (bullet && bullet.blast) {
+      // «Фугас»: взрыв по площади вокруг точки попадания
+      for (const id in players) {
+        const t = players[id];
+        if (t.alive && t.id !== target.id && t.id !== attacker.id && Math.hypot(t.x - x, t.z - z) < 80) {
+          dealDamage(t, amount * 0.6, attackerId, t.x, t.z, null, now);
+        }
+      }
+    }
+  }
 
   // Попадание в дуло? (кончик дула в 34 юнитах по направлению башни)
   const tipX = target.x + Math.sin(target.turretAngle) * 34;
   const tipZ = target.z + Math.cos(target.turretAngle) * 34;
-  const barrelHit = Math.hypot(bullet.x - tipX, bullet.z - tipZ) < 16;
+  const hx = bullet ? bullet.x : x;
+  const hz = bullet ? bullet.z : z;
+  const barrelHit = Math.hypot(hx - tipX, hz - tipZ) < 16;
 
-  io.emit('hit', { x: target.x, z: target.z, color: bullet.ownerColor, id: target.id, barrel: barrelHit, ownerId: bullet.ownerId });
+  io.emit('hit', { x: target.x, z: target.z, color: attacker ? attacker.color : '#ffffff', id: target.id, barrel: barrelHit, ownerId: attackerId });
+
   if (target.hp <= 0) {
+    if (target.flags.second) {
+      // «Второй шанс» — выживание с 5 HP
+      target.hp = 5;
+      target.flags.second = false;
+      return;
+    }
+
+    const wasKamikaze = target.flags.kamikaze;
+
     target.alive = false;
     target.deaths += 1;
     target.respawnAt = now + RESPAWN_DELAY_MS;
+    // Способности сбрасываются при гибели
+    target.buffs = {};
+    target.flags = {};
+    target.rageKills = 0;
+    target.damageMult = 1;
+    target.jamUntil = 0;
 
-    const killer = players[bullet.ownerId];
-    if (killer) {
-      killer.kills += 1;
-      killer.killsSinceUpgrade += 1;
+    // «Камikадзе» — взрыв при гибели
+    if (wasKamikaze) {
+      for (const id in players) {
+        const t = players[id];
+        if (t.alive && t.id !== target.id && Math.hypot(t.x - target.x, t.z - target.z) < 150) {
+          dealDamage(t, 60, target.id, t.x, t.z, null, now);
+        }
+      }
+    }
 
-      if (killer.killsSinceUpgrade >= KILLS_FOR_UPGRADE) {
-        killer.killsSinceUpgrade = 0;
-        killer.pendingUpgradeChoice = true;
+    if (attacker) {
+      attacker.kills += 1;
+      if (attacker.flags.rage) attacker.rageKills += 1;
+      attacker.killsSinceUpgrade += 1;
 
-        const shuffled = [...UPGRADE_POOL].sort(() => Math.random() - 0.5);
-        const offered = shuffled.slice(0, 3).map(u => ({ id: u.id, name: u.name }));
-        io.to(killer.id).emit('offerUpgrade', offered);
+      if (attacker.killsSinceUpgrade >= KILLS_FOR_ROULETTE) {
+        attacker.killsSinceUpgrade = 0;
+        grantAbility(attacker, now);
       }
     }
   }
@@ -392,21 +604,32 @@ function applyDamage(target, bullet, now) {
 // РАССЫЛКА СОСТОЯНИЯ
 // ---------------------------------------------------------------------------
 function broadcastState() {
-  const playersState = Object.values(players).map(p => ({
-    id: p.id,
-    nickname: p.nickname,
-    x: p.x,
-    z: p.z,
-    chassisAngle: p.chassisAngle,
-    turretAngle: p.turretAngle,
-    color: p.color,
-    hp: p.hp,
-    maxHp: p.maxHp,
-    reloadMs: Math.round(BASE_RELOAD_MS * p.reloadMult),
-    alive: p.alive,
-    kills: p.kills,
-    deaths: p.deaths,
-  }));
+  const now = Date.now();
+  const playersState = Object.values(players).map(p => {
+    const effects = [];
+    for (const id in p.buffs) {
+      if (p.buffs[id].until > now) effects.push({ id, remainingMs: p.buffs[id].until - now });
+    }
+    for (const id in p.flags) {
+      effects.push({ id, remainingMs: -1 }); // до конца жизни
+    }
+    return {
+      id: p.id,
+      nickname: p.nickname,
+      x: p.x,
+      z: p.z,
+      chassisAngle: p.chassisAngle,
+      turretAngle: p.turretAngle,
+      color: p.color,
+      hp: p.hp,
+      maxHp: p.maxHp,
+      reloadMs: Math.round(BASE_RELOAD_MS),
+      alive: p.alive,
+      kills: p.kills,
+      deaths: p.deaths,
+      effects,
+    };
+  });
 
   const bulletsState = bullets.map(b => ({
     id: b.id,
