@@ -65,12 +65,6 @@ function buildGround() {
   ground.receiveShadow = true;
   scene.add(ground);
 
-  const grid = new THREE.GridHelper(Math.max(world.width, world.depth), 40, 0x000000, 0x000000);
-  grid.material.opacity = 0.08;
-  grid.material.transparent = true;
-  grid.position.set(world.width / 2, 0.1, world.depth / 2);
-  scene.add(grid);
-
   // Стены-границы карты (невысокие, чтобы обозначить край)
   const wallMat = new THREE.MeshStandardMaterial({ color: 0xc0392b });
   const wallHeight = 20, wallThickness = 6;
