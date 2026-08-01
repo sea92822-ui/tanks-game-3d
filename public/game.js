@@ -204,12 +204,16 @@ function connectToServer(nickname) {
   socket.on('offerUpgrade', (options) => {
     showUpgradeChoice(options);
   });
+
+  socket.on('hit', (data) => {
+    spawnExplosion(data.x, data.z);
+  });
 }
 
 // ---------------------------------------------------------------------------
 // ВВОД: клавиатура
 // ---------------------------------------------------------------------------
-const keys = { forward: false, back: false, left: false, right: false, shooting: false };
+const keys = { forward: false, back: false, left: false, right: false, shooting: false, camLeft: false, camRight: false };
 
 window.addEventListener('keydown', (e) => {
   switch (e.code) {
@@ -217,6 +221,8 @@ window.addEventListener('keydown', (e) => {
     case 'KeyS': case 'ArrowDown': keys.back = true; break;
     case 'KeyA': case 'ArrowLeft': keys.left = true; break;
     case 'KeyD': case 'ArrowRight': keys.right = true; break;
+    case 'KeyQ': keys.camLeft = true; break;
+    case 'KeyE': keys.camRight = true; break;
   }
 });
 window.addEventListener('keyup', (e) => {
@@ -225,6 +231,8 @@ window.addEventListener('keyup', (e) => {
     case 'KeyS': case 'ArrowDown': keys.back = false; break;
     case 'KeyA': case 'ArrowLeft': keys.left = false; break;
     case 'KeyD': case 'ArrowRight': keys.right = false; break;
+    case 'KeyQ': keys.camLeft = false; break;
+    case 'KeyE': keys.camRight = false; break;
   }
 });
 
@@ -262,6 +270,15 @@ window.addEventListener('mouseup', (e) => {
   if (e.button === 2) exitScope();
 });
 window.addEventListener('contextmenu', (e) => e.preventDefault()); // отключаем контекстное меню ПКМ
+
+// Вращение камеры колесом (зум) и Q/E (орбита)
+let camOrbit = 0;
+let camDist = 75;
+let camHeight = 40;
+window.addEventListener('wheel', (e) => {
+  camDist = Math.max(30, Math.min(160, camDist + Math.sign(e.deltaY) * 8));
+  camHeight = 22 + (camDist - 30) * 0.32;
+}, { passive: true });
 
 const scopeOverlay = document.getElementById('scopeOverlay');
 
@@ -320,7 +337,10 @@ setInterval(() => {
 // ---------------------------------------------------------------------------
 const hpBarFill = document.getElementById('hpBarFill');
 const hpText = document.getElementById('hpText');
+const reloadBarFill = document.getElementById('reloadBarFill');
+const reloadText = document.getElementById('reloadText');
 let lastHp = null;
+let lastShotAt = -Infinity;
 
 function updateHUD() {
   const me = currentState.players.find(p => p.id === selfId);
@@ -336,6 +356,18 @@ function updateHUD() {
   if (pct > 50) hpBarFill.style.background = 'linear-gradient(90deg, #27ae60, #2ecc71)';
   else if (pct > 20) hpBarFill.style.background = 'linear-gradient(90deg, #f39c12, #f1c40f)';
   else hpBarFill.style.background = 'linear-gradient(90deg, #c0392b, #e74c3c)';
+
+  // Перезарядка
+  const reloadMs = me.reloadMs || 2000;
+  const progress = Math.max(0, Math.min(1, (Date.now() - lastShotAt) / reloadMs));
+  reloadBarFill.style.width = (progress * 100) + '%';
+  if (progress >= 1) {
+    reloadBarFill.style.background = '#2ecc71';
+    reloadText.textContent = 'ГОТОВО';
+  } else {
+    reloadBarFill.style.background = '#f39c12';
+    reloadText.textContent = 'ПЕРЕЗАРЯДКА';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -508,6 +540,7 @@ function syncBullets(bullets) {
       if (b.ownerId === selfId) {
         addShake(0.35); // отдача при своём выстреле
         playShotSound();
+        lastShotAt = Date.now();
       }
     }
 
@@ -567,6 +600,37 @@ function addShake(amount) {
   shake = Math.min(3, shake + amount);
 }
 
+// Взрыв при попадании
+const explosions = [];
+const EXPLOSION_LIFE_MS = 400;
+function spawnExplosion(x, z) {
+  const colors = [0xff8a2a, 0xffd75e, 0xff5a3d];
+  const group = new THREE.Group();
+  colors.forEach((c) => {
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(6, 8, 8), new THREE.MeshBasicMaterial({ color: c, transparent: true }));
+    mesh.position.set((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 14);
+    group.add(mesh);
+  });
+  group.position.set(x, 18, z);
+  scene.add(group);
+  explosions.push({ group, born: performance.now() });
+}
+
+function updateExplosions() {
+  const now = performance.now();
+  for (let i = explosions.length - 1; i >= 0; i--) {
+    const e = explosions[i];
+    const t = Math.min((now - e.born) / EXPLOSION_LIFE_MS, 1);
+    e.group.scale.setScalar(1 + t * 3);
+    e.group.children.forEach(c => { c.material.opacity = 1 - t; });
+    if (t >= 1) {
+      scene.remove(e.group);
+      e.group.children.forEach(c => c.material.dispose());
+      explosions.splice(i, 1);
+    }
+  }
+}
+
 // Звук выстрела
 const shotSound = new Audio('vystrel-tanka.mp3');
 shotSound.preload = 'auto';
@@ -624,12 +688,13 @@ function updateCamera(players) {
     const lookTarget = camera.position.clone().add(lookDir.multiplyScalar(100));
     camera.lookAt(lookTarget);
   } else {
-    // --- Камера от третьего лица: позади и выше танка ---
-    const behindDist = 75, height = 40;
+    // --- Камера от третьего лица: орбита вокруг танка (Q/E + колесо) ---
+    if (keys.camLeft) camOrbit += 0.05;
+    if (keys.camRight) camOrbit -= 0.05;
     const desired = new THREE.Vector3(
-      me.x - Math.sin(me.chassisAngle) * behindDist,
-      height,
-      me.z - Math.cos(me.chassisAngle) * behindDist
+      me.x - Math.sin(me.chassisAngle + camOrbit) * camDist,
+      camHeight,
+      me.z - Math.cos(me.chassisAngle + camOrbit) * camDist
     );
     camera.position.lerp(desired, 0.12);
 
@@ -664,6 +729,7 @@ function animate() {
     syncTanks(players);
     syncBullets(bullets);
     updateMuzzleFlashes();
+    updateExplosions();
     updateCamera(players);
   }
 

@@ -323,6 +323,7 @@ function updateBullets(dt, now) {
 
 function applyDamage(target, bullet, now) {
   target.hp -= bullet.damage;
+  io.emit('hit', { x: target.x, z: target.z, color: bullet.ownerColor });
   if (target.hp <= 0) {
     target.alive = false;
     target.deaths += 1;
@@ -359,6 +360,7 @@ function broadcastState() {
     color: p.color,
     hp: p.hp,
     maxHp: p.maxHp,
+    reloadMs: Math.round(BASE_RELOAD_MS * p.reloadMult),
     alive: p.alive,
     kills: p.kills,
     deaths: p.deaths,

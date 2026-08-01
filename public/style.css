@@ -67,7 +67,37 @@ html, body {
   padding: 5px 10px;
   border-radius: 4px;
   display: inline-block;
-  max-width: 320px;
+  max-width: 420px;
+}
+
+#reloadBarWrap {
+  width: 240px;
+  height: 14px;
+  margin-top: 6px;
+  background: rgba(0,0,0,0.5);
+  border: 2px solid #555;
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+
+#reloadBarFill {
+  height: 100%;
+  width: 100%;
+  background: #2ecc71;
+  transition: width 0.1s linear;
+}
+
+#reloadText {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  text-shadow: 1px 1px 2px #000;
 }
 
 /* ---------- Leaderboard ---------- */
