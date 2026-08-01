@@ -30,6 +30,19 @@
     <ol id="leaderboardList"></ol>
   </div>
 
+  <!-- Настройки графики -->
+  <div id="settingsBtn" title="Настройки графики">⚙️</div>
+  <div id="settingsPanel" class="hidden">
+    <h3>Графика</h3>
+    <div class="qualityGroup">
+      <button data-quality="low">Низкая</button>
+      <button data-quality="medium">Средняя</button>
+      <button data-quality="high">Высокая</button>
+    </div>
+    <label class="settingsRow"><input type="checkbox" id="shadowsToggle"> Тени</label>
+    <label class="settingsRow"><input type="checkbox" id="effectsToggle"> Эффекты</label>
+  </div>
+
   <!-- Оверлей прицела от первого лица -->
   <div id="scopeOverlay" class="hidden">
     <div id="scopeVignette"></div>

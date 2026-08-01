@@ -45,6 +45,75 @@ sunLight.shadow.camera.bottom = -600;
 sunLight.shadow.mapSize.set(2048, 2048);
 scene.add(sunLight);
 
+// Вспышка у дула (общий свет для всех выстрелов)
+const muzzleLight = new THREE.PointLight(0xffaa44, 0, 240);
+muzzleLight.position.set(0, 30, 0);
+scene.add(muzzleLight);
+
+// ---------------------------------------------------------------------------
+// НАСТРОЙКИ ГРАФИКИ
+// ---------------------------------------------------------------------------
+const settingsState = { quality: 'high', shadows: true, effects: true };
+try {
+  Object.assign(settingsState, JSON.parse(localStorage.getItem('tanksGraphics') || '{}'));
+} catch (e) { /* ignore */ }
+const QUALITY_PIXEL_RATIO = { low: 1, medium: 1.25, high: 1.75 };
+
+function saveGraphicsSettings() {
+  try { localStorage.setItem('tanksGraphics', JSON.stringify(settingsState)); } catch (e) { /* ignore */ }
+}
+
+function applyGraphicsSettings() {
+  const shadows = settingsState.shadows && settingsState.quality !== 'low';
+  renderer.shadowMap.enabled = shadows;
+  sunLight.castShadow = shadows;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, QUALITY_PIXEL_RATIO[settingsState.quality]));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function initSettingsUI() {
+  const settingsBtn = document.getElementById('settingsBtn');
+  const settingsPanel = document.getElementById('settingsPanel');
+  const shadowsToggle = document.getElementById('shadowsToggle');
+  const effectsToggle = document.getElementById('effectsToggle');
+
+  settingsBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    settingsPanel.classList.toggle('hidden');
+  });
+  document.addEventListener('click', (e) => {
+    if (!settingsPanel.contains(e.target) && e.target !== settingsBtn) settingsPanel.classList.add('hidden');
+  });
+  document.querySelectorAll('[data-quality]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      settingsState.quality = btn.dataset.quality;
+      saveGraphicsSettings();
+      applyGraphicsSettings();
+      updateSettingsUI();
+    });
+  });
+  shadowsToggle.addEventListener('change', () => {
+    settingsState.shadows = shadowsToggle.checked;
+    saveGraphicsSettings();
+    applyGraphicsSettings();
+  });
+  effectsToggle.addEventListener('change', () => {
+    settingsState.effects = effectsToggle.checked;
+    saveGraphicsSettings();
+  });
+
+  function updateSettingsUI() {
+    document.querySelectorAll('[data-quality]').forEach(b => b.classList.toggle('active', b.dataset.quality === settingsState.quality));
+    shadowsToggle.checked = settingsState.shadows;
+    effectsToggle.checked = settingsState.effects;
+  }
+  window.updateSettingsUI = updateSettingsUI;
+  updateSettingsUI();
+}
+
+applyGraphicsSettings();
+initSettingsUI();
+
 // ---------------------------------------------------------------------------
 // МИР (заполняется после получения init от сервера)
 // ---------------------------------------------------------------------------
@@ -286,10 +355,12 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mousedown', (e) => {
+  if (e.target.closest('#settingsPanel, #settingsBtn')) return;
   if (e.button === 0) keys.shooting = true;
   if (e.button === 2) enterScope();
 });
 window.addEventListener('mouseup', (e) => {
+  if (e.target.closest('#settingsPanel, #settingsBtn')) return;
   if (e.button === 0) keys.shooting = false;
   if (e.button === 2) exitScope();
 });
@@ -300,6 +371,7 @@ let camOrbit = 0;
 let camDist = 75;
 let camHeight = 40;
 window.addEventListener('wheel', (e) => {
+  if (e.target.closest('#settingsPanel, #settingsBtn')) return;
   camDist = Math.max(30, Math.min(160, camDist + Math.sign(e.deltaY) * 8));
   camHeight = 22 + (camDist - 30) * 0.32;
 }, { passive: true });
@@ -513,8 +585,11 @@ function getInterpolatedBullets() {
   t = Math.max(0, Math.min(1, t));
 
   return b.state.bullets.map(cur => {
-    const prev = a.state.bullets.find(bul => bul.id === cur.id) || cur;
-    return { ...cur, x: lerp(prev.x, cur.x, t), z: lerp(prev.z, cur.z, t) };
+    const prev = a.state.bullets.find(bul => bul.id === cur.id);
+    if (prev) {
+      return { ...cur, x: lerp(prev.x, cur.x, t), z: lerp(prev.z, cur.z, t), dirX: cur.x - prev.x, dirZ: cur.z - prev.z };
+    }
+    return { ...cur, x: cur.x, z: cur.z, dirX: 0, dirZ: 0 };
   });
 }
 
@@ -589,6 +664,13 @@ function syncBullets(bullets) {
     }
 
     mesh.position.set(b.x, 18, b.z);
+    const dirLen = Math.hypot(b.dirX || 0, b.dirZ || 0);
+    if (dirLen > 0.01) {
+      mesh.rotation.y = Math.atan2(b.dirX, b.dirZ);
+      mesh.scale.set(1, 1, 8); // трассер — вытягиваем пулю по направлению полёта
+    } else {
+      mesh.scale.set(1, 1, 1);
+    }
   });
 
   for (const [id, mesh] of bulletMeshes) {
@@ -616,10 +698,13 @@ const flashMat = new THREE.MeshBasicMaterial({ color: 0xffd75e, transparent: tru
 const FLASH_LIFE_MS = 90;
 
 function spawnMuzzleFlash(x, z) {
+  if (!settingsState.effects) return;
   const mesh = new THREE.Mesh(flashGeo, flashMat.clone());
   mesh.position.set(x, 18, z);
   scene.add(mesh);
   muzzleFlashes.push({ mesh, born: performance.now() });
+  muzzleLight.position.set(x, 26, z);
+  muzzleLight.intensity = 3;
 }
 
 function updateMuzzleFlashes() {
@@ -636,6 +721,7 @@ function updateMuzzleFlashes() {
     f.mesh.material.opacity = 1 - age / FLASH_LIFE_MS;
     f.mesh.scale.setScalar(1 + age * 0.06);
   }
+  muzzleLight.intensity = Math.max(0, muzzleLight.intensity * 0.8 - 0.02);
 }
 
 let shake = 0;
@@ -648,13 +734,22 @@ function addShake(amount) {
 const explosions = [];
 const EXPLOSION_LIFE_MS = 400;
 function spawnExplosion(x, z) {
+  if (!settingsState.effects) return;
   const colors = [0xff8a2a, 0xffd75e, 0xff5a3d];
   const group = new THREE.Group();
   colors.forEach((c) => {
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(6, 8, 8), new THREE.MeshBasicMaterial({ color: c, transparent: true }));
-    mesh.position.set((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 14);
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(5 + Math.random() * 4, 8, 8), new THREE.MeshBasicMaterial({ color: c, transparent: true }));
+    mesh.position.set((Math.random() - 0.5) * 16, (Math.random() - 0.5) * 12, (Math.random() - 0.5) * 16);
     group.add(mesh);
   });
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(3, 4.5, 28),
+    new THREE.MeshBasicMaterial({ color: 0xffd75e, transparent: true, side: THREE.DoubleSide })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  group.add(ring);
+  const light = new THREE.PointLight(0xff8833, 3, 300);
+  group.add(light);
   group.position.set(x, 18, z);
   scene.add(group);
   explosions.push({ group, born: performance.now() });
@@ -665,11 +760,14 @@ function updateExplosions() {
   for (let i = explosions.length - 1; i >= 0; i--) {
     const e = explosions[i];
     const t = Math.min((now - e.born) / EXPLOSION_LIFE_MS, 1);
-    e.group.scale.setScalar(1 + t * 3);
-    e.group.children.forEach(c => { c.material.opacity = 1 - t; });
+    e.group.scale.setScalar(1 + t * 4);
+    e.group.children.forEach(c => {
+      if (c.isPointLight) { c.intensity = 3 * (1 - t); return; }
+      c.material.opacity = 1 - t;
+    });
     if (t >= 1) {
       scene.remove(e.group);
-      e.group.children.forEach(c => c.material.dispose());
+      e.group.children.forEach(c => { if (c.isMesh) c.material.dispose(); });
       explosions.splice(i, 1);
     }
   }
@@ -733,6 +831,64 @@ function breakOffBarrel(tankId) {
   launchBit(breakOffPart(barrel), 40);
 }
 
+// ---------------------------------------------------------------------------
+// СЛЕДЫ ГУСЕНИЦ
+// ---------------------------------------------------------------------------
+const trackGeo = new THREE.PlaneGeometry(3.4, 9);
+const trackMarks = []; // { mesh, born }
+const trackPool = [];
+const TRACK_MARK_DIST = 9;
+const TRACK_LIFE_MS = 8000;
+const TRACK_MAX_MARKS = 600;
+
+function placeTrackMark(x, z, angle) {
+  if (!settingsState.effects) return;
+  if (trackMarks.length >= TRACK_MAX_MARKS) return;
+  let mesh = trackPool.pop();
+  if (!mesh) {
+    mesh = new THREE.Mesh(trackGeo, new THREE.MeshBasicMaterial({ color: 0x1c1c1c, transparent: true, depthWrite: false }));
+    mesh.rotation.x = -Math.PI / 2;
+    scene.add(mesh);
+  }
+  mesh.position.set(x, 0.06, z);
+  mesh.rotation.z = Math.PI / 2 - angle;
+  mesh.material.opacity = 0.34;
+  mesh.visible = true;
+  trackMarks.push({ mesh, born: performance.now() });
+}
+
+function updateTrackMarks(players, now) {
+  for (let i = trackMarks.length - 1; i >= 0; i--) {
+    const m = trackMarks[i];
+    const age = now - m.born;
+    if (age > TRACK_LIFE_MS) {
+      m.mesh.visible = false;
+      trackPool.push(m.mesh);
+      trackMarks.splice(i, 1);
+      continue;
+    }
+    m.mesh.material.opacity = 0.34 * (1 - age / TRACK_LIFE_MS);
+  }
+
+  players.forEach(p => {
+    if (!p.alive) return;
+    const mesh = tankMeshes.get(p.id);
+    if (!mesh) return;
+    const last = mesh.userData.lastTrack;
+    if (!last) {
+      mesh.userData.lastTrack = { x: p.x, z: p.z };
+      return;
+    }
+    const dist = Math.hypot(p.x - last.x, p.z - last.z);
+    if (dist < TRACK_MARK_DIST) return;
+    mesh.userData.lastTrack = { x: p.x, z: p.z };
+    const a = p.chassisAngle;
+    const cos = Math.cos(a), sin = Math.sin(a);
+    placeTrackMark(p.x + cos * 15, p.z - sin * 15, a);  // правая гусеница
+    placeTrackMark(p.x - cos * 15, p.z + sin * 15, a);  // левая гусеница
+  });
+}
+
 function destroyTank(mesh) {
   // Башня (с дулом) взлетает и падает отдельно
   launchBit(breakOffPart(mesh.userData.turretPivot), 90);
@@ -787,16 +943,20 @@ function updateCamera(players) {
 
   if (isScoped) {
     // --- Камера от первого лица: на кончике дула башни ---
-    const tipLocal = mesh.userData.barrelTipLocal;
-    const tipWorld = tipLocal.clone();
-    mesh.userData.turretPivot.localToWorld(tipWorld);
+    // Для своего танка используем мгновенный угол мыши, чтобы прицел не лагал
+    const turretAngle = me.id === selfId ? targetTurretAngle : me.turretAngle;
+    const tipWorld = new THREE.Vector3(
+      me.x + Math.sin(turretAngle) * 34,
+      35,
+      me.z + Math.cos(turretAngle) * 34
+    );
 
     camera.position.lerp(tipWorld, 0.5);
 
     const lookDir = new THREE.Vector3(
-      Math.sin(me.turretAngle) * Math.cos(scopePitch),
+      Math.sin(turretAngle) * Math.cos(scopePitch),
       Math.sin(scopePitch),
-      Math.cos(me.turretAngle) * Math.cos(scopePitch)
+      Math.cos(turretAngle) * Math.cos(scopePitch)
     );
     const lookTarget = camera.position.clone().add(lookDir.multiplyScalar(100));
     camera.lookAt(lookTarget);
@@ -849,6 +1009,7 @@ function animate() {
     updateMuzzleFlashes();
     updateExplosions();
     updateFlyingBits(dt, now);
+    updateTrackMarks(players, now);
     updateCamera(players);
   }
 
