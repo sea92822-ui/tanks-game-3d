@@ -54,7 +54,11 @@ let maxHp = 100;
 
 function buildGround() {
   const geo = new THREE.PlaneGeometry(world.width, world.depth);
-  const mat = new THREE.MeshStandardMaterial({ color: 0x3a6b3d });
+  const grassTex = new THREE.TextureLoader().load('texture/grass-6.jpg');
+  grassTex.wrapS = grassTex.wrapT = THREE.RepeatWrapping;
+  grassTex.repeat.set(80, 80);
+  grassTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const mat = new THREE.MeshStandardMaterial({ map: grassTex });
   const ground = new THREE.Mesh(geo, mat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(world.width / 2, 0, world.depth / 2);
