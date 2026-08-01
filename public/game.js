@@ -62,6 +62,8 @@ const settingsState = { quality: 'high', shadows: true, effects: true, fov: 65, 
 try {
   Object.assign(settingsState, JSON.parse(localStorage.getItem('tanksGraphics') || '{}'));
 } catch (e) { /* ignore */ }
+// громкость не может быть нулевой по умолчанию — иначе «нет звука»
+if (!(settingsState.volume > 0)) settingsState.volume = 0.7;
 const QUALITY_PIXEL_RATIO = { low: 1, medium: 1.25, high: 1.75 };
 let normalFov = settingsState.fov || NORMAL_FOV;
 
@@ -1116,10 +1118,16 @@ function playPenetrationSound() {
 }
 
 function unlockAudio() {
-  const p = shotSound.play();
-  if (p) p.then(() => { shotSound.pause(); shotSound.currentTime = 0; }).catch(() => {});
-  const e = engineIdleSound.play();
-  if (e) e.catch(() => {});
+  // Прогреваем ВСЕ звуки по жесту пользователя — иначе браузер блокирует их
+  [shotSound, explosionSound, penetrationSound, engineIdleSound, engineMoveSound].forEach(s => {
+    try {
+      s.currentTime = 0;
+      const p = s.play();
+      if (p) p.then(() => {
+        if (s !== engineIdleSound) { s.pause(); s.currentTime = 0; }
+      }).catch(() => {});
+    } catch (e) { /* ignore */ }
+  });
 }
 
 function playShotSound() {
