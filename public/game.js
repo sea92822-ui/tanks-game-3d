@@ -1125,6 +1125,7 @@ function updateMyRank(me) {
 // ---------------------------------------------------------------------------
 const playerDustTimers = new Map();
 const playerExhaustTimers = new Map();
+const exhaustPrevPos = new Map(); // позиции для расчёта скорости (у выхлопа свои, не путать с dust)
 const playerPrevMoving = new Map();
 const prevPlayerPos = new Map();
 
@@ -1133,9 +1134,10 @@ function emitExhaust(players, dt) {
   if (!settingsState.effects) return;
   players.forEach(p => {
     if (!p.alive) return;
-    const prev = prevPlayerPos.get(p.id);
+    const prev = exhaustPrevPos.get(p.id);
     let speed = 0;
     if (prev) speed = Math.hypot(p.x - prev.x, p.z - prev.z) / Math.max(dt, 0.001);
+    exhaustPrevPos.set(p.id, { x: p.x, z: p.z });
     const moving = speed > 25;
     const wasMoving = playerPrevMoving.get(p.id) || false;
     playerPrevMoving.set(p.id, moving);
@@ -1167,7 +1169,7 @@ function spawnExhaustPuff(p, delayMs, moving) {
     const mesh = new THREE.Mesh(particleGeo, mat);
     const size = moving ? 2.5 + Math.random() * 2 : 1.8 + Math.random() * 1.4;
     mesh.scale.setScalar(size);
-    mesh.position.set(tx, 9.5, tz);
+    mesh.position.set(tx, (p.y || 0) + 9.5, tz);
     scene.add(mesh);
     particles.push({
       mesh,
@@ -1533,6 +1535,7 @@ function syncTanks(players) {
       playerDustTimers.delete(id);
       prevPlayerPos.delete(id);
       playerExhaustTimers.delete(id);
+      exhaustPrevPos.delete(id);
       playerPrevMoving.delete(id);
       wreckedTimers.delete(id);
       tankPrevY.delete(id);
