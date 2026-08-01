@@ -735,7 +735,7 @@ function syncBullets(bullets) {
     const dirLen = Math.hypot(b.dirX || 0, b.dirZ || 0);
     if (dirLen > 0.01) {
       mesh.rotation.y = Math.atan2(b.dirX, b.dirZ);
-      mesh.scale.set(1, 1, 8); // трассер — вытягиваем пулю по направлению полёта
+      mesh.scale.set(1, 1, 6); // трассер — вытягиваем пулю по направлению полёта
     } else {
       mesh.scale.set(1, 1, 1);
     }
@@ -753,7 +753,7 @@ function syncBullets(bullets) {
 
 let sharedBulletGeo = null;
 function getSharedBulletGeometry() {
-  if (!sharedBulletGeo) sharedBulletGeo = new THREE.SphereGeometry(5, 8, 8);
+  if (!sharedBulletGeo) sharedBulletGeo = new THREE.SphereGeometry(2.5, 8, 8);
   return sharedBulletGeo;
 }
 
