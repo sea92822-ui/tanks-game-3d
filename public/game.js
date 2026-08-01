@@ -167,6 +167,7 @@ nicknameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') startG
 
 function startGame() {
   const nickname = nicknameInput.value.trim();
+  unlockAudio(); // разблокируем звук по жесту пользователя
   nicknameOverlay.classList.add('hidden');
   connectToServer(nickname);
 }
@@ -568,10 +569,21 @@ function addShake(amount) {
 
 // Звук выстрела
 const shotSound = new Audio('vystrel-tanka.mp3');
-shotSound.volume = 0.6;
+shotSound.preload = 'auto';
+shotSound.load();
+shotSound.volume = 0.7;
+
+function unlockAudio() {
+  const p = shotSound.play();
+  if (p) p.then(() => { shotSound.pause(); shotSound.currentTime = 0; }).catch(() => {});
+}
+
 function playShotSound() {
-  shotSound.currentTime = 0;
-  shotSound.play().catch(() => {});
+  try {
+    shotSound.currentTime = 0;
+    const p = shotSound.play();
+    if (p) p.catch(() => {});
+  } catch (e) { /* ignore */ }
 }
 
 // ---------------------------------------------------------------------------
