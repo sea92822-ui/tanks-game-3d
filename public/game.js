@@ -254,6 +254,42 @@ function buildObstacles() {
 }
 
 // ---------------------------------------------------------------------------
+// БАТУТЫ (4 штуки): подкидывают танк вверх
+// ---------------------------------------------------------------------------
+let trampolineGroup = null;
+
+function ensureTrampolines(trampolines) {
+  if (!trampolines || trampolineGroup) return;
+  trampolineGroup = new THREE.Group();
+  trampolines.forEach(t => {
+    const g = new THREE.Group();
+    // Ножки и каркас
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(30, 34, 4, 20), new THREE.MeshStandardMaterial({ color: 0x2c2c2c, metalness: 0.5, roughness: 0.6 }));
+    base.position.y = 2;
+    base.castShadow = true;
+    g.add(base);
+    // Прыжковое полотно
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(27, 27, 5, 20), new THREE.MeshStandardMaterial({ color: 0xe74c3c, metalness: 0.3, roughness: 0.7 }));
+    pad.position.y = 6.5;
+    pad.castShadow = true;
+    g.add(pad);
+    // Пружинный обод
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(27, 2.2, 8, 24), new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.7, roughness: 0.4 }));
+    rim.rotation.x = Math.PI / 2;
+    rim.position.y = 9;
+    g.add(rim);
+    // Внутренняя сетка
+    const inner = new THREE.Mesh(new THREE.CircleGeometry(25, 20), new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.9 }));
+    inner.rotation.x = -Math.PI / 2;
+    inner.position.y = 9.1;
+    g.add(inner);
+    g.position.set(t.x, 0, t.z);
+    trampolineGroup.add(g);
+  });
+  scene.add(trampolineGroup);
+}
+
+// ---------------------------------------------------------------------------
 // ФАБРИКА ТАНКА (корпус + независимо вращаемая башня + дуло)
 // ---------------------------------------------------------------------------
 function createTankMesh(color) {
@@ -310,6 +346,7 @@ const RENDER_DELAY = 100; // мс — рендерим мир с фиксиро�
 const stateBuffer = [];    // { time, state } — последние состояния от сервера
 
 const tankMeshes = new Map();   // id -> THREE.Group
+const tankPrevY = new Map();    // id -> последняя высота (для пыли при приземлении)
 const bulletMeshes = new Map(); // id -> THREE.Mesh
 
 let wasAlive = true;
@@ -431,6 +468,12 @@ function connectToServer(nickname, color) {
     updateHUD();
     updateLeaderboard();
     checkDeathScreen();
+    ensureTrampolines(state.trampolines);
+  });
+
+  socket.on('bounce', () => {
+    // подброс своего танка: лёгкий экранный отклик
+    shake = Math.max(shake, 0.7);
   });
 
   socket.on('roulette', (data) => {
@@ -1117,6 +1160,7 @@ function getInterpolatedPlayers() {
       ...cur,
       x: lerp(prev.x, cur.x, t),
       z: lerp(prev.z, cur.z, t),
+      y: lerp(prev.y || 0, cur.y || 0, t),
       chassisAngle: lerpAngleShort(prev.chassisAngle, cur.chassisAngle, t),
       turretAngle: lerpAngleShort(prev.turretAngle, cur.turretAngle, t),
     };
@@ -1143,6 +1187,12 @@ function getInterpolatedBullets() {
 }
 
 // Отдача: дуло плавно возвращается в исходное положение
+// Пыль при приземлении после подброса батутом
+function spawnLandingDust(x, z) {
+  if (!settingsState.effects) return;
+  spawnParticles(x, 4, z, 7, [0xa8906c, 0x8a7560, 0xb5a181], 40, 1.2, 450, 1.6, 1.2);
+}
+
 function updateTankRecoils(dt) {
   tankMeshes.forEach(mesh => {
     if (mesh.userData.recoil > 0.05) {
@@ -1177,6 +1227,7 @@ function syncTanks(players) {
         mesh.userData.wrecked = true;
         destroyTank(mesh);
       }
+      mesh.position.set(p.x, 0, p.z);
       return;
     }
 
@@ -1189,10 +1240,13 @@ function syncTanks(players) {
       tankMeshes.set(p.id, mesh);
     }
 
-    mesh.position.set(p.x, 0, p.z);
+    // Высота: батуты подбрасывают, обломок — на земле
+    const y = Math.max(0, p.y || 0);
+    if (tankPrevY.get(p.id) > 2 && y <= 0.5) spawnLandingDust(mesh.position.x, mesh.position.z);
+    tankPrevY.set(p.id, y);
+    mesh.position.set(p.x, y, p.z);
     mesh.rotation.y = p.chassisAngle;
     mesh.userData.turretPivot.rotation.y = p.turretAngle - p.chassisAngle;
-
     // «Невидимость» — полупрозрачный танк
     const invis = (p.effects || []).some(e => e.id === 'invis');
     if (invis && mesh.userData.invisible !== true) {
@@ -1220,6 +1274,7 @@ function syncTanks(players) {
       playerExhaustTimers.delete(id);
       playerPrevMoving.delete(id);
       wreckedTimers.delete(id);
+      tankPrevY.delete(id);
     }
   }
 }
@@ -1899,9 +1954,10 @@ function updateCamera(players) {
     // --- Камера от первого лица: на кончике дула башни ---
     // Для своего танка используем мгновенный угол мыши, чтобы прицел не лагал
     const turretAngle = me.id === selfId ? targetTurretAngle : me.turretAngle;
+    const myY = Math.max(0, me.y || 0);
     const tipWorld = new THREE.Vector3(
       me.x + Math.sin(turretAngle) * 34,
-      35,
+      35 + myY,
       me.z + Math.cos(turretAngle) * 34
     );
 
@@ -1918,14 +1974,15 @@ function updateCamera(players) {
     // --- Камера от третьего лица: орбита вокруг танка (Q/E + колесо) ---
     if (keys.camLeft) camOrbit += 0.05;
     if (keys.camRight) camOrbit -= 0.05;
+    const myY = Math.max(0, me.y || 0);
     _camDesired.set(
       me.x - Math.sin(me.chassisAngle + camOrbit) * camDist,
-      camHeight,
+      camHeight + myY,
       me.z - Math.cos(me.chassisAngle + camOrbit) * camDist
     );
     camera.position.lerp(_camDesired, 0.12);
 
-    _camTarget.set(me.x, 12, me.z);
+    _camTarget.set(me.x, 12 + myY, me.z);
     camLookTarget.lerp(_camTarget, 0.15);
     camera.lookAt(camLookTarget);
   }

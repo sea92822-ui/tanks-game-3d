@@ -73,6 +73,26 @@ const PICKUP_COUNT = 8;
 const PICKUP_RESPAWN_MS = 10000;
 const PICKUP_POSITIONS = generatePickupPositions();
 
+// Батуты: 4 штуки на карте, подкидывают танк вверх
+const TRAMPOLINE_RADIUS = 34;
+const TRAMPOLINE_BOUNCE = 150;   // начальная вертикальная скорость при подбросе
+const TRAMPOLINE_GRAVITY = 380;  // гравитация при прыжке
+const TRAMPOLINE_COOLDOWN_MS = 1200;
+const TRAMPOLINES = generateTrampolines();
+
+function generateTrampolines() {
+  const positions = [];
+  let attempts = 0;
+  while (positions.length < 4 && attempts < 500) {
+    attempts++;
+    const x = 250 + Math.random() * (WORLD.width - 500);
+    const z = 250 + Math.random() * (WORLD.depth - 500);
+    const hitsObstacle = OBSTACLES.some(o => circleRectCollision(x, z, 45, o));
+    if (!hitsObstacle) positions.push({ x, z });
+  }
+  return positions;
+}
+
 function generatePickupPositions() {
   const positions = [];
   for (let k = 0; k < PICKUP_COUNT; k++) {
@@ -247,6 +267,9 @@ function createPlayer(id, nickname, color) {
     nickname: nickname && nickname.trim() ? nickname.trim().slice(0, 16) : randomNickname(),
     x: spawn.x,
     z: spawn.z,
+    y: 0,             // высота при подбросе батутом
+    vy: 0,            // вертикальная скорость
+    bounceCooldown: 0,
     chassisAngle: 0,   // направление корпуса / движения (рад, вокруг Y)
     turretAngle: 0,    // направление башни (рад, вокруг Y) — независимо от корпуса
     color: color || randomColor(),
@@ -336,6 +359,8 @@ function tick() {
         p.hp = p.maxHp;
         p.alive = true;
         p.spawnProtectUntil = now + SPAWN_PROTECT_MS; // защита на старте
+        p.y = 0;
+        p.vy = 0;
       }
       continue;
     }
@@ -343,6 +368,7 @@ function tick() {
     processBuffs(p, dt, now);
     updatePlayerMovement(p, dt);
     updatePlayerShooting(p, now);
+    applyTrampolines(p, now, dt);
   }
 
   updateBullets(dt, now);
@@ -454,6 +480,27 @@ function processBuffs(p, dt, now) {
           dealDamage(target, 15, p.id, target.x, target.z);
         }
       }
+    }
+  }
+}
+
+function applyTrampolines(p, now, dt) {
+  // Вертикальный полёт после подброса
+  if (p.y > 0 || p.vy > 0) {
+    p.y += p.vy * dt;
+    p.vy -= TRAMPOLINE_GRAVITY * dt;
+    if (p.y <= 0) {
+      p.y = 0;
+      p.vy = 0;
+    }
+  }
+  // Наезд на батут — подброс
+  if (p.y <= 0 && now >= p.bounceCooldown) {
+    const tramp = TRAMPOLINES.find(t => Math.hypot(p.x - t.x, p.z - t.z) < TRAMPOLINE_RADIUS);
+    if (tramp) {
+      p.vy = TRAMPOLINE_BOUNCE;
+      p.bounceCooldown = now + TRAMPOLINE_COOLDOWN_MS;
+      io.to(p.id).emit('bounce', {});
     }
   }
 }
@@ -765,6 +812,7 @@ function broadcastState() {
       nickname: p.nickname,
       x: p.x,
       z: p.z,
+      y: p.y,
       chassisAngle: p.chassisAngle,
       turretAngle: p.turretAngle,
       color: p.color,
@@ -789,7 +837,7 @@ function broadcastState() {
 
   const pickupsState = pickups.filter(pk => pk.active).map(pk => ({ id: pk.id, type: pk.type, x: pk.x, z: pk.z }));
 
-  io.emit('state', { players: playersState, bullets: bulletsState, pickups: pickupsState });
+  io.emit('state', { players: playersState, bullets: bulletsState, pickups: pickupsState, trampolines: TRAMPOLINES });
 }
 
 setInterval(tick, 1000 / TICK_RATE);
