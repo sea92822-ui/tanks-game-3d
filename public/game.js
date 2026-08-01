@@ -811,10 +811,10 @@ const CELL_W = 128;
 let rouletteSpinning = false;
 let roulettePos = 0;
 
-// Лента из 3 повторов всех 30 карточек
+// Лента из 12 повторов всех карточек — никогда не заканчивается при прокрутке
 function buildRouletteStrip() {
   rouletteStrip.innerHTML = '';
-  for (let rep = 0; rep < 3; rep++) {
+  for (let rep = 0; rep < 12; rep++) {
     ABILITY_CARDS.forEach((card, idx) => {
       const cell = document.createElement('div');
       cell.className = 'rouletteCell';
@@ -834,9 +834,12 @@ function spinRoulette(ability) {
   rouletteResult.classList.add('hidden');
   rouletteOverlay.classList.remove('hidden');
 
-  const targetIdx = ABILITY_CARDS.findIndex(c => c[0] === ability.id);
-  const repeats = 3;
-  const finalPos = roulettePos + repeats * ABILITY_CARDS.length * CELL_W + targetIdx * CELL_W;
+  const N = ABILITY_CARDS.length;
+  const cycle = N * CELL_W;
+  const targetIdx = Math.max(0, ABILITY_CARDS.findIndex(c => c[0] === ability.id));
+  // докручиваем ровно до целевой карточки от текущей позиции
+  const delta = ((targetIdx * CELL_W - roulettePos) % cycle + cycle) % cycle;
+  const finalPos = roulettePos + 5 * cycle + delta; // 5 полных оборотов
 
   const startPos = roulettePos;
   const duration = 4200;
@@ -852,7 +855,7 @@ function spinRoulette(ability) {
       requestAnimationFrame(frame);
     } else {
       rouletteSpinning = false;
-      roulettePos %= ABILITY_CARDS.length * CELL_W;
+      roulettePos %= cycle;
       rouletteStrip.style.transform = `translateX(${-roulettePos}px)`;
       showRouletteResult(ability);
     }
@@ -952,6 +955,19 @@ function getInterpolatedBullets() {
   });
 }
 
+// Отдача: дуло плавно возвращается в исходное положение
+function updateTankRecoils(dt) {
+  tankMeshes.forEach(mesh => {
+    if (mesh.userData.recoil > 0.05) {
+      mesh.userData.recoil *= Math.pow(0.02, dt);
+      mesh.userData.barrel.position.z = 20 - mesh.userData.recoil;
+    } else if (mesh.userData.recoil !== 0) {
+      mesh.userData.recoil = 0;
+      mesh.userData.barrel.position.z = 20;
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------
 // СИНХРОНИЗАЦИЯ 3D-МЕШЕЙ С СОСТОЯНИЕМ
 // ---------------------------------------------------------------------------
@@ -1029,6 +1045,8 @@ function syncBullets(bullets) {
         addShake(0.35); // отдача при своём выстреле
         playShotSound();
         lastShotAt = Date.now();
+        const me = tankMeshes.get(selfId);
+        if (me) me.userData.recoil = 7; // дуло отталкивается назад
       }
     }
 
@@ -1583,6 +1601,7 @@ function animate() {
 
     syncTanks(players);
     syncBullets(bullets);
+    updateTankRecoils(dt);
     syncPickups(currentState.pickups, now);
     updateMuzzleFlashes();
     updateExplosions();

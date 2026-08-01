@@ -645,6 +645,27 @@ function dealDamage(target, amount, attackerId, x, z, bullet, now) {
   }
 
   let dmg = amount;
+
+  // Зоны попадания: лоб бронирован, корма слабая, башня — уязвимое место
+  if (bullet) {
+    const hitAng = Math.atan2(bullet.x - target.x, bullet.z - target.z);
+    let diff = Math.abs(hitAng - target.chassisAngle);
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    diff = Math.abs(diff);
+
+    let zoneMult = 1;
+    if (diff < 1.0) zoneMult = 0.8;        // лоб — броня
+    else if (diff < 2.4) zoneMult = 1.0;   // борт
+    else zoneMult = 1.35;                  // корма — пробивается легче
+
+    // Попадание в башню (уязвимое место)
+    const turretX = target.x + Math.sin(target.turretAngle) * 6;
+    const turretZ = target.z + Math.cos(target.turretAngle) * 6;
+    if (Math.hypot(bullet.x - turretX, bullet.z - turretZ) < 13) zoneMult *= 1.2;
+
+    dmg = Math.min(amount * 1.6, dmg * zoneMult);
+  }
+
   if (buffActive(target, 'armor')) dmg *= 0.75;
   target.hp -= dmg;
 
