@@ -1329,6 +1329,7 @@ function spawnMuzzleSmoke(b) {
       vy: 25 + Math.random() * 25,
       vz: (Math.random() - 0.5) * 20,
       grav: 18, // дым лёгкий — поднимается вверх
+      grow: 0.55,
       born: performance.now(),
       life: 1500 + Math.random() * 800,
     });
@@ -1406,11 +1407,11 @@ function spawnDustWave(x, z) {
     scene.add(mesh);
     particles.push({
       mesh,
-      vx: Math.cos(ang) * (55 + Math.random() * 45),
-      vy: 10 + Math.random() * 10,
-      vz: Math.sin(ang) * (55 + Math.random() * 45),
+      vx: Math.cos(ang) * (35 + Math.random() * 25),
+      vy: 8 + Math.random() * 8,
+      vz: Math.sin(ang) * (35 + Math.random() * 25),
       grav: 40,
-      grow: 0.8,
+      grow: 0.35,
       born: performance.now(),
       life: 700 + Math.random() * 350,
     });
@@ -1441,7 +1442,7 @@ function updateExplosions() {
 const particles = [];
 const particleGeo = new THREE.SphereGeometry(1.8, 6, 6);
 
-function spawnParticles(x, y, z, count, colors, speed, upBias, life, size) {
+function spawnParticles(x, y, z, count, colors, speed, upBias, life, size, grow) {
   if (!settingsState.effects) return;
   for (let i = 0; i < count; i++) {
     const mat = new THREE.MeshBasicMaterial({ color: colors[i % colors.length], transparent: true });
@@ -1454,6 +1455,7 @@ function spawnParticles(x, y, z, count, colors, speed, upBias, life, size) {
       vx: (Math.random() - 0.5) * speed,
       vy: Math.random() * speed * upBias + speed * 0.2,
       vz: (Math.random() - 0.5) * speed,
+      grow: grow || 2,
       born: performance.now(),
       life,
     });
@@ -1652,7 +1654,7 @@ function destroyTank(mesh) {
   // Большой взрыв, огонь и дым
   spawnExplosion(mesh.position.x, mesh.position.z);
   spawnParticles(mesh.position.x, 22, mesh.position.z, 14, [0xff8a2a, 0xff5a3d, 0xffd75e], 230, 1.4, 900, 3);
-  spawnParticles(mesh.position.x, 24, mesh.position.z, 8, [0x555555, 0x777777, 0x444444], 70, 2.2, 1600, 5.5);
+  spawnParticles(mesh.position.x, 24, mesh.position.z, 8, [0x555555, 0x777777, 0x444444], 45, 2.2, 1600, 5.5, 0.5);
   // Обломки корпуса разлетаются
   spawnDebris(mesh.position.x, mesh.position.z);
 }
