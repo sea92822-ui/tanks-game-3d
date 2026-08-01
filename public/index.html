@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Танчики 3D Online</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -118,6 +118,15 @@
     <div id="deathBox">
       <h2>💥 Танк уничтожен</h2>
       <p id="respawnTimer">Возрождение через 3...</p>
+    </div>
+  </div>
+
+  <!-- Мобильное управление: джойстик, зум, выстрел -->
+  <div id="touchControls">
+    <div id="joyBase"><div id="joyKnob"></div></div>
+    <div id="touchBtns">
+      <button id="zoomBtn" type="button">🔍</button>
+      <button id="fireBtn" type="button">🔥</button>
     </div>
   </div>
 

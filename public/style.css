@@ -750,3 +750,69 @@ html, body {
   from { transform: scale(0.5); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
 }
+/* ---------- Мобильное управление ---------- */
+#touchControls { display: none; }
+body.touch #touchControls { display: block; }
+
+#joyBase {
+  position: fixed;
+  left: 24px;
+  bottom: 24px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.10);
+  border: 2px solid rgba(255,255,255,0.35);
+  z-index: 50;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+#joyKnob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 54px;
+  height: 54px;
+  margin: -27px 0 0 -27px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.45);
+  box-shadow: 0 0 10px rgba(0,0,0,0.4);
+  pointer-events: none;
+  will-change: transform;
+}
+#touchBtns {
+  position: fixed;
+  right: 20px;
+  bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  z-index: 50;
+}
+#fireBtn, #zoomBtn {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.45);
+  background: rgba(255,60,40,0.35);
+  color: #fff;
+  font-size: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+#fireBtn:active { background: rgba(255,60,40,0.7); }
+#zoomBtn { width: 64px; height: 64px; font-size: 24px; background: rgba(60,140,255,0.35); }
+#zoomBtn.active { background: rgba(60,255,140,0.5); }
+
+@media (pointer: coarse) {
+  #touchControls { display: block; }
+  #controlsHint { display: none; }
+}

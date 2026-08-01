@@ -702,6 +702,7 @@ let mouseNDC = new THREE.Vector2(0, 0);
 
 // Обычный режим: наводим башню рейкастом мыши на землю
 window.addEventListener('mousemove', (e) => {
+  if (isTouchGhost()) return;
   if (isScoped) {
     // Pointer Lock режим: вращаем башню напрямую через движение мыши
     const sensitivity = 0.0022;
@@ -715,16 +716,121 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mousedown', (e) => {
+  if (isTouchGhost()) return;
   if (e.target.closest('#settingsPanel, #settingsBtn')) return;
   if (e.button === 0) keys.shooting = true;
   if (e.button === 2) enterScope();
 });
 window.addEventListener('mouseup', (e) => {
+  if (isTouchGhost()) return;
   if (e.target.closest('#settingsPanel, #settingsBtn')) return;
   if (e.button === 0) keys.shooting = false;
   if (e.button === 2) exitScope();
 });
 window.addEventListener('contextmenu', (e) => e.preventDefault()); // отключаем контекстное меню ПКМ
+
+// ---------------------------------------------------------------------------
+// МОБИЛЬНОЕ УПРАВЛЕНИЕ: джойстик (движение) + кнопки «Выстрел» и «Зум»
+// ---------------------------------------------------------------------------
+const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+
+const joyBaseEl = document.getElementById('joyBase');
+const joyKnobEl = document.getElementById('joyKnob');
+const fireBtnEl = document.getElementById('fireBtn');
+const zoomBtnEl = document.getElementById('zoomBtn');
+
+const joy = { active: false, id: -1, dx: 0, dy: 0 };
+const JOY_MAX = 44;   // радиус хода джойстика
+const JOY_DEAD = 12;  // мёртвая зона
+
+joyBaseEl.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  joy.active = true;
+  joy.id = t.identifier;
+  joy.dx = 0;
+  joy.dy = 0;
+}, { passive: false });
+
+joyBaseEl.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    if (t.identifier !== joy.id) continue;
+    const rect = joyBaseEl.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    let dx = t.clientX - cx;
+    let dy = t.clientY - cy;
+    const len = Math.hypot(dx, dy);
+    if (len > JOY_MAX) { dx = dx / len * JOY_MAX; dy = dy / len * JOY_MAX; }
+    joy.dx = dx;
+    joy.dy = dy;
+  }
+}, { passive: false });
+
+function endJoy(e) {
+  for (const t of e.changedTouches) {
+    if (t.identifier === joy.id) { joy.active = false; joy.dx = 0; joy.dy = 0; }
+  }
+}
+joyBaseEl.addEventListener('touchend', endJoy);
+joyBaseEl.addEventListener('touchcancel', endJoy);
+
+// Выстрел: держим кнопку — танк стреляет
+fireBtnEl.addEventListener('touchstart', (e) => { e.preventDefault(); keys.shooting = true; }, { passive: false });
+fireBtnEl.addEventListener('touchend', (e) => { e.preventDefault(); keys.shooting = false; }, { passive: false });
+fireBtnEl.addEventListener('touchcancel', () => { keys.shooting = false; });
+
+// Зум: переключает режим прицела от первого лица
+zoomBtnEl.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  if (isScoped) exitScope(); else enterScope();
+  zoomBtnEl.classList.toggle('active', isScoped);
+}, { passive: false });
+
+// Прицеливание касанием: правый палец по экрану — башня следует за точкой
+let touchAimId = -1;
+let lastAimX = 0;
+let lastAimY = 0;
+let lastTouchEndAt = 0;
+
+document.addEventListener('touchstart', (e) => {
+  document.body.classList.add('touch');
+  for (const t of e.changedTouches) {
+    if (t.target.closest('#joyBase, #touchBtns, #settingsPanel, #settingsBtn, #leaderboard, #minimap, #nicknameOverlay')) continue;
+    touchAimId = t.identifier;
+    lastAimX = t.clientX;
+    lastAimY = t.clientY;
+  }
+}, { passive: true });
+
+document.addEventListener('touchmove', (e) => {
+  for (const t of e.changedTouches) {
+    if (t.identifier !== touchAimId) continue;
+    if (isScoped) {
+      // в прицеле вращаем башню свайпом, как мышью при pointer lock
+      targetTurretAngle -= (t.clientX - lastAimX) * 0.005;
+      scopePitch -= (t.clientY - lastAimY) * 0.005;
+      scopePitch = Math.max(-0.35, Math.min(0.45, scopePitch));
+    } else {
+      // обычный режим: рейкаст из точки касания на землю
+      mouseNDC.x = (t.clientX / window.innerWidth) * 2 - 1;
+      mouseNDC.y = -(t.clientY / window.innerHeight) * 2 + 1;
+    }
+    lastAimX = t.clientX;
+    lastAimY = t.clientY;
+  }
+}, { passive: true });
+
+document.addEventListener('touchend', (e) => {
+  lastTouchEndAt = Date.now();
+  for (const t of e.changedTouches) {
+    if (t.identifier === touchAimId) touchAimId = -1;
+  }
+});
+
+// Подавляем синтетические mouse-события после касаний (чтобы не стрелять зря)
+function isTouchGhost() { return Date.now() - lastTouchEndAt < 700; }
 
 // Вращение камеры колесом (зум) и Q/E (орбита)
 let camOrbit = 0;
@@ -741,12 +847,14 @@ const scopeOverlay = document.getElementById('scopeOverlay');
 function enterScope() {
   isScoped = true;
   scopeOverlay.classList.remove('hidden');
-  renderer.domElement.requestPointerLock();
+  zoomBtnEl.classList.add('active');
+  if (!isTouchDevice) renderer.domElement.requestPointerLock();
 }
 
 function exitScope() {
   isScoped = false;
   scopeOverlay.classList.add('hidden');
+  zoomBtnEl.classList.remove('active');
   if (document.pointerLockElement === renderer.domElement) {
     document.exitPointerLock();
   }
@@ -757,12 +865,25 @@ document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement !== renderer.domElement && isScoped) {
     isScoped = false;
     scopeOverlay.classList.add('hidden');
+    zoomBtnEl.classList.remove('active');
   }
 });
+
+// На телефоне блокируем скролл/зум страницы (кроме панели настроек)
+document.addEventListener('touchmove', (e) => {
+  if (!e.target.closest('#settingsPanel')) e.preventDefault();
+}, { passive: false });
 
 // Отправка ввода на сервер с фиксированной частотой
 setInterval(() => {
   if (!socket || !selfId) return;
+
+  // Джойстик: движение и поворот, клавиатура — поверх
+  joyKnobEl.style.transform = `translate(${joy.dx}px, ${joy.dy}px)`;
+  const joyFwd = joy.dy < -JOY_DEAD;
+  const joyBack = joy.dy > JOY_DEAD;
+  const joyLeft = joy.dx < -JOY_DEAD;
+  const joyRight = joy.dx > JOY_DEAD;
 
   // В обычном режиме считаем целевой угол башни через рейкаст мыши на землю
   if (!isScoped) {
@@ -779,10 +900,10 @@ setInterval(() => {
   }
 
   socket.emit('input', {
-    forward: keys.forward,
-    back: keys.back,
-    left: keys.left,
-    right: keys.right,
+    forward: keys.forward || joyFwd,
+    back: keys.back || joyBack,
+    left: keys.left || joyLeft,
+    right: keys.right || joyRight,
     targetTurretAngle,
     shooting: keys.shooting,
     ammo: currentAmmo,
