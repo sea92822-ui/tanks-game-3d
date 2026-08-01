@@ -1147,7 +1147,7 @@ function syncBullets(bullets) {
       scene.add(mesh);
       bulletMeshes.set(b.id, mesh);
       spawnMuzzleFlash(b.x, b.z);
-      spawnMuzzleSmoke(b.x, b.z); // дым после выстрела — видят все
+      spawnMuzzleSmoke(b); // дым поднимается вокруг танка — видят все
       if (b.ownerId === selfId) {
         addShake(0.35); // отдача при своём выстреле
         playShotSound();
@@ -1201,22 +1201,29 @@ function spawnMuzzleFlash(x, z) {
   muzzleLight.intensity = 3;
 }
 
-// Дым вокруг танка после выстрела
-function spawnMuzzleSmoke(x, z) {
+// Дым поднимается вокруг танка после выстрела (виден всем)
+function spawnMuzzleSmoke(b) {
   if (!settingsState.effects) return;
-  for (let i = 0; i < 5; i++) {
-    const mat = new THREE.MeshBasicMaterial({ color: 0x9a9a9a, transparent: true });
+  const shooter = currentState.players.find(pl => pl.id === b.ownerId);
+  const cx = shooter ? shooter.x : b.x;
+  const cz = shooter ? shooter.z : b.z;
+
+  for (let i = 0; i < 9; i++) {
+    const mat = new THREE.MeshBasicMaterial({ color: 0xc8c8c8, transparent: true });
     const mesh = new THREE.Mesh(particleGeo, mat);
-    mesh.scale.setScalar(2.5 + Math.random() * 3);
-    mesh.position.set(x + (Math.random() - 0.5) * 16, 15 + Math.random() * 8, z + (Math.random() - 0.5) * 16);
+    mesh.scale.setScalar(5 + Math.random() * 5);
+    const ang = Math.random() * Math.PI * 2;
+    const r = 8 + Math.random() * 18;
+    mesh.position.set(cx + Math.cos(ang) * r, 8 + Math.random() * 14, cz + Math.sin(ang) * r);
     scene.add(mesh);
     particles.push({
       mesh,
-      vx: (Math.random() - 0.5) * 45,
-      vy: 18 + Math.random() * 22,
-      vz: (Math.random() - 0.5) * 45,
+      vx: (Math.random() - 0.5) * 20,
+      vy: 25 + Math.random() * 25,
+      vz: (Math.random() - 0.5) * 20,
+      grav: 18, // дым лёгкий — поднимается вверх
       born: performance.now(),
-      life: 800 + Math.random() * 400,
+      life: 1500 + Math.random() * 800,
     });
   }
 }
@@ -1344,7 +1351,7 @@ function updateParticles(dt, now) {
       particles.splice(i, 1);
       continue;
     }
-    p.vy -= 60 * dt;
+    p.vy -= (p.grav || 60) * dt;
     p.mesh.position.x += p.vx * dt;
     p.mesh.position.y += p.vy * dt;
     p.mesh.position.z += p.vz * dt;
