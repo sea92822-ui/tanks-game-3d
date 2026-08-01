@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Танчики 3D Online</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Контейнер для Three.js канваса -->
+  <div id="sceneContainer"></div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div id="hpBarWrap">
+      <div id="hpBarFill"></div>
+      <span id="hpText">100 / 100</span>
+    </div>
+    <div id="controlsHint">W/S — вперёд/назад · A/D — поворот · Мышь — прицел башней · ЛКМ — огонь · ПКМ (зажать) — прицел от 1 лица</div>
+  </div>
+
+  <!-- Таблица лидеров -->
+  <div id="leaderboard">
+    <h3>🏆 Лидеры</h3>
+    <ol id="leaderboardList"></ol>
+  </div>
+
+  <!-- Оверлей прицела от первого лица -->
+  <div id="scopeOverlay" class="hidden">
+    <div id="scopeVignette"></div>
+    <div id="scopeCrosshair">
+      <div class="line horizontal"></div>
+      <div class="line vertical"></div>
+      <div class="dot"></div>
+    </div>
+  </div>
+
+  <!-- Экран ввода ника -->
+  <div id="nicknameOverlay">
+    <div id="nicknameBox">
+      <h1>⚔️ ТАНЧИКИ 3D ONLINE</h1>
+      <p>Введите ник или начните с случайным</p>
+      <input type="text" id="nicknameInput" maxlength="16" placeholder="Ваш ник (необязательно)">
+      <button id="startBtn">В БОЙ!</button>
+    </div>
+  </div>
+
+  <!-- Окно выбора прокачки -->
+  <div id="upgradeOverlay" class="hidden">
+    <div id="upgradeBox">
+      <h2>🎖️ Выбери улучшение!</h2>
+      <div id="upgradeOptions"></div>
+    </div>
+  </div>
+
+  <!-- Экран смерти -->
+  <div id="deathOverlay" class="hidden">
+    <div id="deathBox">
+      <h2>💥 Танк уничтожен</h2>
+      <p id="respawnTimer">Возрождение через 3...</p>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

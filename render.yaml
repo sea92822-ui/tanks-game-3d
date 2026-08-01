@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: tanks-game-3d
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /
+    autoDeploy: true
