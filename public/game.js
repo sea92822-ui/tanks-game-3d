@@ -130,6 +130,9 @@ function initSettingsUI() {
     settingsState.volume = Number(volumeSlider.value) / 100;
     saveGraphicsSettings();
     shotSound.volume = settingsState.volume;
+    explosionSound.volume = settingsState.volume;
+    engineIdleSound.volume = settingsState.volume * 0.25;
+    engineMoveSound.volume = settingsState.volume * 0.5;
   });
 
   function updateSettingsUI() {
@@ -1052,6 +1055,12 @@ function updateTrackMarks(players, now) {
 }
 
 function destroyTank(mesh) {
+  // Звук взрыва танка
+  try {
+    explosionSound.currentTime = 0;
+    const p = explosionSound.play();
+    if (p) p.catch(() => {});
+  } catch (e) { /* ignore */ }
   // Башня (с дулом) взлетает и падает отдельно
   launchBit(breakOffPart(mesh.userData.turretPivot), 90);
   // Корпус остаётся обломком — подпаливаем
@@ -1070,9 +1079,30 @@ shotSound.preload = 'auto';
 shotSound.load();
 shotSound.volume = settingsState.volume;
 
+// Звук мотора: холостой ход и езда
+const engineIdleSound = new Audio('engine-idle.mp3');
+engineIdleSound.loop = true;
+engineIdleSound.preload = 'auto';
+engineIdleSound.load();
+engineIdleSound.volume = settingsState.volume * 0.25;
+
+const engineMoveSound = new Audio('engine-move.mp3');
+engineMoveSound.loop = true;
+engineMoveSound.preload = 'auto';
+engineMoveSound.load();
+engineMoveSound.volume = settingsState.volume * 0.5;
+
+// Звук взрыва танка
+const explosionSound = new Audio('explosion.mp3');
+explosionSound.preload = 'auto';
+explosionSound.load();
+explosionSound.volume = settingsState.volume;
+
 function unlockAudio() {
   const p = shotSound.play();
   if (p) p.then(() => { shotSound.pause(); shotSound.currentTime = 0; }).catch(() => {});
+  const e = engineIdleSound.play();
+  if (e) e.catch(() => {});
 }
 
 function playShotSound() {
@@ -1081,6 +1111,23 @@ function playShotSound() {
     const p = shotSound.play();
     if (p) p.catch(() => {});
   } catch (e) { /* ignore */ }
+}
+
+let engineMoving = false;
+function updateEngineSound() {
+  if (!selfId) return;
+  const moving = keys.forward || keys.back;
+  if (moving && !engineMoving) {
+    engineMoving = true;
+    engineIdleSound.pause();
+    const p = engineMoveSound.play();
+    if (p) p.catch(() => {});
+  } else if (!moving && engineMoving) {
+    engineMoving = false;
+    engineMoveSound.pause();
+    const e = engineIdleSound.play();
+    if (e) e.catch(() => {});
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1178,6 +1225,7 @@ function animate() {
     updateFlyingBits(dt, now);
     updateTrackMarks(players, now);
     updateDamageTexts(now);
+    updateEngineSound();
     updateCamera(players);
   }
 
