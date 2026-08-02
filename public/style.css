@@ -240,7 +240,7 @@ html, body {
 /* ---------- Пинг ---------- */
 #pingText {
   position: fixed;
-  top: 20px;
+  top: 58px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
@@ -253,6 +253,112 @@ html, body {
   padding: 4px 12px;
   border-radius: 6px;
 }
+
+/* ---------- Командный счёт (Team Deathmatch) ---------- */
+#teamScore {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(10, 12, 16, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 6px 16px;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+  z-index: 20;
+}
+#teamScore .tsRed { color: #ff6b5e; }
+#teamScore .tsBlue { color: #5b9dff; }
+#teamScore .ts { text-shadow: 0 0 8px rgba(0, 0, 0, 0.6); }
+#teamScore .ts.my { text-decoration: underline; }
+#teamScore .tsSep { color: #fff; font-size: 17px; }
+#teamScore #tsToWin {
+  color: #999;
+  font-size: 11px;
+  font-weight: 400;
+  border-left: 1px solid rgba(255, 255, 255, 0.15);
+  padding-left: 10px;
+}
+
+/* ---------- Баннер победы команды ---------- */
+#matchBanner {
+  position: fixed;
+  top: 66px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 28px;
+  border-radius: 14px;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  z-index: 30;
+  pointer-events: none;
+  animation: bannerPulse 1.2s ease-in-out infinite alternate;
+  text-align: center;
+}
+#matchBanner.win { background: rgba(46, 204, 113, 0.25); color: #6bffb0; border: 2px solid rgba(46, 204, 113, 0.7); }
+#matchBanner.lose { background: rgba(231, 76, 60, 0.25); color: #ff8f85; border: 2px solid rgba(231, 76, 60, 0.7); }
+@keyframes bannerPulse { from { transform: translateX(-50%) scale(1); } to { transform: translateX(-50%) scale(1.06); } }
+
+/* ---------- Метки команд над танками ---------- */
+#tankLabels {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 15;
+}
+.tankLabel {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  will-change: left, top;
+}
+.tankLabel .tlName {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95), 0 0 6px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+}
+.tankLabel .tlHp {
+  width: 56px;
+  height: 5px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.tankLabel .tlHpFill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.2s linear;
+}
+.tankLabel.enemy .tlName::after { content: ' ⚔'; }
+.tankLabel.ally .tlName::after { content: ' ●'; font-size: 9px; }
+
+/* ---------- Значок команды в лидерборде ---------- */
+.lbTeam {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.lbTeamRed { background: #e74c3c; box-shadow: 0 0 6px rgba(231, 76, 60, 0.8); }
+.lbTeamBlue { background: #3498db; box-shadow: 0 0 6px rgba(52, 152, 219, 0.8); }
 
 /* ---------- Выбор цвета танка ---------- */
 #colorPicker {
@@ -823,6 +929,30 @@ body.touch #minimap { bottom: 300px; } /* выше кнопок тача */
 #modelPicker p { font-size: 13px; color: #aaa; margin-bottom: 6px; }
 #modelButtons { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 .modelBtn {
+
+/* ---------- Выбор команды ---------- */
+#teamPicker { margin-top: 12px; }
+#teamPicker p { font-size: 12px; color: #aaa; margin-bottom: 6px; }
+#teamButtons { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.teamBtn {
+  padding: 9px 16px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #ddd;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.teamBtn:hover { transform: scale(1.05); }
+.teamRed:hover { border-color: #e74c3c; color: #ff6b5e; }
+.teamBlue:hover { border-color: #3498db; color: #5b9dff; }
+.teamAuto:hover { border-color: #2ecc71; color: #6bffb0; }
+.teamBtn.selected.teamRed { background: rgba(231, 76, 60, 0.35); border-color: #ff6b5e; color: #fff; }
+.teamBtn.selected.teamBlue { background: rgba(52, 152, 219, 0.35); border-color: #5b9dff; color: #fff; }
+.teamBtn.selected.teamAuto { background: rgba(46, 204, 113, 0.3); border-color: #2ecc71; color: #fff; }
   padding: 8px 14px;
   border-radius: 8px;
   border: 1px solid #444;

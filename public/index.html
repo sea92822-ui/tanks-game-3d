@@ -43,6 +43,20 @@
   <!-- Пинг -->
   <div id="pingText">Пинг: —</div>
 
+  <!-- Командный счёт (Team Deathmatch) -->
+  <div id="teamScore">
+    <span id="tsRed" class="ts tsRed">🔴 Красные 0</span>
+    <span id="tsSep" class="tsSep">:</span>
+    <span id="tsBlue" class="ts tsBlue">0 Синие 🔵</span>
+    <span id="tsToWin">до 10</span>
+  </div>
+
+  <!-- Баннер победы команды -->
+  <div id="matchBanner" class="hidden"></div>
+
+  <!-- Метки имён и HP над танками -->
+  <div id="tankLabels"></div>
+
   <!-- Таблица лидеров -->
   <div id="leaderboard">
     <h3>🏆 Лидеры</h3>
@@ -100,6 +114,14 @@
         <p>Модель танка</p>
         <div id="modelButtons"></div>
       </div>
+      <div id="teamPicker">
+        <p>Выбери команду (можно играть с другом: вместе или друг против друга)</p>
+        <div id="teamButtons">
+          <button type="button" class="teamBtn teamRed" data-team="0">🔴 КРАСНЫЕ</button>
+          <button type="button" class="teamBtn teamBlue" data-team="1">🔵 СИНИЕ</button>
+          <button type="button" class="teamBtn teamAuto" data-team="">⚖️ Авто</button>
+        </div>
+      </div>
       <button id="startBtn">В БОЙ!</button>
       <button id="menuSettingsBtn" type="button">⚙️ Настройки</button>
     </div>
@@ -146,6 +168,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="vendor/GLTFLoader.js"></script>
   <script src="vendor/RoomEnvironment.js"></script>
-  <script src="game.js?v=16"></script>
+  <script src="game.js?v=18"></script>
 </body>
 </html>

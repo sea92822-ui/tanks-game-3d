@@ -14,7 +14,8 @@ const path = require('path');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: '*' }
+  cors: { origin: '*' },
+  transports: ['websocket', 'polling'], // сначала WebSocket — меньше задержка
 });
 
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -40,6 +41,25 @@ const SPAWN_PROTECT_MS = 3000;
 const MAX_HP = 100;
 const KILLS_FOR_ROULETTE = 3;
 const OBSTACLES = generateObstacles();
+
+// ---------------------------------------------------------------------------
+// КОМАНДНЫЙ РЕЖИМ (Team Deathmatch): красные (0) против синих (1)
+// ---------------------------------------------------------------------------
+const TEAM_NAMES = ['Красные', 'Синие'];
+const TEAM_COLORS = ['#e74c3c', '#3498db'];   // цвет команды (маркеры, баннеры)
+const KILLS_TO_WIN = 10;                      // первый до 10 фрагов — победа
+const MATCH_RESET_MS = 6000;                  // пауза между матчами
+const BOTS_PER_TEAM = 3;                      // боты с каждой стороны
+let teamScore = [0, 0];
+let matchWinner = null;      // 0 / 1 — команда-победитель
+let matchWinnerAt = 0;
+
+// Имена ботов по командам (добавляется номер, чтобы имена были уникальны)
+const BOT_NAMES = [
+  ['Молот', 'Гром', 'Броня', 'Титан', 'Вихрь'],
+  ['Шквал', 'Буран', 'Айсберг', 'Молния', 'Кристалл'],
+];
+let botCounter = 1;
 
 // Артиллерия: удар по точке раз в минуту (с задержкой падения снаряда)
 const ARTILLERY_COOLDOWN_MS = 60000;
@@ -254,10 +274,9 @@ function circleRectCollision(cx, cz, r, rect) {
 
 // Два конца карты: северо-запад и юго-восток, танки спавнятся по командам
 const SPAWN_ZONES = [
-  { x: 300, z: 300 },                            // северо-запад
-  { x: WORLD.width - 300, z: WORLD.depth - 300 }, // юго-восток
+  { x: 300, z: 300 },                            // северо-запад — красные
+  { x: WORLD.width - 300, z: WORLD.depth - 300 }, // юго-восток — синие
 ];
-let nextSpawnSide = 0; // 0 / 1 чередуются
 
 function getSafeSpawnPoint(side) {
   const zone = SPAWN_ZONES[side];
@@ -281,13 +300,23 @@ function getSafeSpawnPoint(side) {
   return { x: zone.x, z: zone.z };
 }
 
-function createPlayer(id, nickname, color, model) {
-  const side = nextSpawnSide;
-  nextSpawnSide = 1 - nextSpawnSide;
+// Команда с меньшим числом людей (боты не считаются) — для авто-баланса
+function autoTeam() {
+  const humans = Object.values(players).filter(p => !p.bot);
+  const red = humans.filter(p => p.team === 0).length;
+  const blue = humans.filter(p => p.team === 1).length;
+  if (red !== blue) return red < blue ? 0 : 1;
+  return Math.random() < 0.5 ? 0 : 1;
+}
+
+function createPlayer(id, nickname, color, model, team) {
+  const side = (team === 0 || team === 1) ? team : autoTeam();
   const spawn = getSafeSpawnPoint(side);
   return {
     id,
     side,
+    team: side,
+    bot: false,
     nickname: nickname && nickname.trim() ? nickname.trim().slice(0, 16) : randomNickname(),
     x: spawn.x,
     z: spawn.z,
@@ -323,6 +352,41 @@ function buffActive(p, id) {
 }
 
 // ---------------------------------------------------------------------------
+// БОТЫ: полноценные игроки на сервере, управляются ИИ (см. updateBot)
+// ---------------------------------------------------------------------------
+function createBot(team) {
+  const n = botCounter++;
+  const name = BOT_NAMES[team][Math.floor(Math.random() * BOT_NAMES[team].length)] + '-' + n;
+  const bot = createPlayer('bot-' + n, name, TEAM_COLORS[team], 'light', team);
+  bot.bot = true;
+  bot.model = team === 0 ? 'heavy' : 'light'; // у красных тяжёлые, у синих быстрые — разнообразие
+  bot.color = TEAM_COLORS[team];
+  // Параметры ИИ
+  bot.botReactAt = 0;        // ближайший момент, когда бот может выстрелить
+  bot.botAimErr = 0;         // текущая ошибка прицела (случайная, обновляется)
+  bot.botAimUntil = 0;       // когда пересчитать ошибку прицела
+  bot.botOrbitDir = Math.random() < 0.5 ? 1 : -1; // направление обхода вокруг цели
+  bot.botOrbitUntil = 0;
+  bot.botCombatRange = 380 + Math.random() * 260; // предпочитаемая дистанция боя
+  bot.botWanderAngle = Math.random() * Math.PI * 2; // направление без цели
+  bot.botStuckUntil = 0;     // если застрял — поворачиваем жёстче
+  bot.input.ammo = 'ap';
+  players['bot-' + n] = bot;
+  return bot;
+}
+
+function spawnBots() {
+  for (let team = 0; team < 2; team++) {
+    for (let i = 0; i < BOTS_PER_TEAM; i++) createBot(team);
+  }
+}
+
+// Рассылка только живым людям (у ботов нет сокета)
+function emitTo(p, event, data) {
+  if (p && !p.bot) io.to(p.id).emit(event, data);
+}
+
+// ---------------------------------------------------------------------------
 // SOCKET.IO
 // ---------------------------------------------------------------------------
 io.on('connection', (socket) => {
@@ -330,7 +394,8 @@ io.on('connection', (socket) => {
   socket.on('join', (data) => {
     const nickname = data && data.nickname ? String(data.nickname) : '';
     const color = data && TANK_COLORS.includes(data.color) ? data.color : null;
-    const player = createPlayer(socket.id, nickname, color, data && data.model);
+    const team = data && (data.team === 0 || data.team === 1) ? data.team : null;
+    const player = createPlayer(socket.id, nickname, color, data && data.model, team);
     players[socket.id] = player;
 
     socket.emit('init', {
@@ -338,9 +403,11 @@ io.on('connection', (socket) => {
       world: WORLD,
       obstacles: OBSTACLES,
       maxHp: MAX_HP,
+      team: player.team,
+      teams: { score: teamScore, toWin: KILLS_TO_WIN, winner: matchWinner },
     });
 
-    console.log(`Игрок подключился: ${player.nickname} (${socket.id})`);
+    console.log(`Игрок подключился: ${player.nickname} (${socket.id}) команда ${TEAM_NAMES[player.team]}`);
   });
 
   socket.on('artillery', (data) => {
@@ -385,6 +452,13 @@ function tick() {
   const dt = Math.min((now - lastTick) / 1000, 0.05);
   lastTick = now;
 
+  // Пауза между матчами: сброс счёта после победы
+  if (matchWinner !== null && now - matchWinnerAt > MATCH_RESET_MS) {
+    matchWinner = null;
+    teamScore = [0, 0];
+    io.emit('matchReset', { score: teamScore });
+  }
+
   for (const id in players) {
     const p = players[id];
 
@@ -400,6 +474,14 @@ function tick() {
         p.vy = 0;
       }
       continue;
+    }
+
+    if (p.bot) {
+      try {
+        updateBot(p, dt, now);
+      } catch (err) {
+        console.log('BOT AI ERROR', err.message);
+      }
     }
 
     processBuffs(p, dt, now);
@@ -453,7 +535,7 @@ function updatePickups(now) {
         applyPickup(p, pk.type, now);
         pk.active = false;
         pk.respawnAt = now + PICKUP_RESPAWN_MS;
-        io.to(p.id).emit('pickup', { type: pk.type });
+        emitTo(p, 'pickup', { type: pk.type });
         break;
       }
     }
@@ -504,6 +586,151 @@ function updatePlayerMovement(p, dt) {
   p.turretAngle = lerpAngle(p.turretAngle, p.input.targetTurretAngle, TURRET_TURN_SPEED * turretMult * dt);
 }
 
+// ---------------------------------------------------------------------------
+// ИИ БОТОВ: ближайший враг → прицеливание → огонь, движение с объездом
+// ---------------------------------------------------------------------------
+function angleDiff(a, b) {
+  let d = a - b;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+// Прямая видимость для снаряда (узкий радиус, в отличие от obstacleAt)
+function lineBlocked(x, z) {
+  if (x < 20 || x > WORLD.width - 20 || z < 20 || z > WORLD.depth - 20) return true;
+  for (const o of OBSTACLES) {
+    if (o.type === 'tree' && !o.standing) continue;
+    if (circleRectCollision(x, z, 12, o)) return true;
+  }
+  return false;
+}
+
+function hasLineOfSight(x0, z0, x1, z1) {
+  const dist = Math.hypot(x1 - x0, z1 - z0);
+  const steps = Math.max(4, Math.ceil(dist / 45));
+  for (let s = 1; s < steps; s++) {
+    const t = s / steps;
+    if (lineBlocked(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t)) return false;
+  }
+  return true;
+}
+
+// Зонд для объезда: только твёрдые препятствия (деревья сносятся танком)
+function solidProbe(x, z) {
+  if (x < 60 || x > WORLD.width - 60 || z < 60 || z > WORLD.depth - 60) return true;
+  for (const o of OBSTACLES) {
+    if (o.type === 'tree') continue;
+    if (circleRectCollision(x, z, 20, o)) return true;
+  }
+  return false;
+}
+
+function updateBot(bot, dt, now) {
+  const input = bot.input;
+
+  // ---- Ближайший живой враг ----
+  let target = null;
+  let best = Infinity;
+  for (const id in players) {
+    const e = players[id];
+    if (!e.alive || e.team === bot.team) continue;
+    const d = Math.hypot(e.x - bot.x, e.z - bot.z);
+    if (d < best) { best = d; target = e; }
+  }
+
+  if (!target) {
+    // Врагов нет — блуждаем по карте
+    input.forward = true;
+    input.back = false;
+    input.shooting = false;
+    const diff = angleDiff(bot.botWanderAngle, bot.chassisAngle);
+    input.left = diff > 0.08;
+    input.right = diff < -0.08;
+    if (Math.abs(diff) < 0.1) bot.botWanderAngle = Math.random() * Math.PI * 2;
+    return;
+  }
+
+  // ---- Прицел башни на врага с небольшой ошибкой ----
+  const aim = Math.atan2(target.x - bot.x, target.z - bot.z);
+  if (now >= bot.botAimUntil) {
+    bot.botAimUntil = now + 350 + Math.random() * 400;
+    bot.botAimErr = (Math.random() - 0.5) * 0.09;
+  }
+  input.targetTurretAngle = aim + bot.botAimErr;
+
+  // ---- Огонь: доведённый прицел + реакция + прямая видимость ----
+  const aimDiff = Math.abs(angleDiff(input.targetTurretAngle, bot.turretAngle));
+  const canShoot = aimDiff < 0.12 && best < 1300 && hasLineOfSight(bot.x, bot.z, target.x, target.z);
+  if (canShoot && now >= bot.botReactAt) {
+    input.shooting = true;
+  } else {
+    input.shooting = false;
+    if (!canShoot && now >= bot.botReactAt) {
+      bot.botReactAt = now + 200 + Math.random() * 350; // заново прицеливается
+    }
+  }
+
+  // ---- Движение: сближение / обход вокруг на своей дистанции ----
+  let moveAngle;
+  const steerActive = now < bot.botSteerUntil;
+  if (steerActive) {
+    // Объезд препятствия: едем вбок, пока не выйдем на свободное место
+    moveAngle = bot.chassisAngle + Math.PI / 2 * (bot.botSteerDir || 1);
+  } else if (best > bot.botCombatRange + 80) {
+    moveAngle = aim; // едем на врага
+  } else {
+    if (now >= bot.botOrbitUntil) {
+      bot.botOrbitUntil = now + 2500 + Math.random() * 2500;
+      bot.botOrbitDir = -bot.botOrbitDir;
+    }
+    moveAngle = aim + Math.PI / 2 * bot.botOrbitDir; // кружим, чтобы не стоять столбом
+  }
+
+  // Объезд препятствий: зондируем место впереди корпуса (ближний и дальний зонд)
+  const sx = Math.sin(bot.chassisAngle), czx = Math.cos(bot.chassisAngle);
+  const probeNear = solidProbe(bot.x + sx * 60, bot.z + czx * 60);
+  const probeFar = solidProbe(bot.x + sx * 130, bot.z + czx * 130);
+  if (!steerActive && (probeNear || probeFar)) {
+    const lx = bot.x + Math.sin(bot.chassisAngle + Math.PI / 2) * 95;
+    const lz = bot.z + Math.cos(bot.chassisAngle + Math.PI / 2) * 95;
+    const rx = bot.x + Math.sin(bot.chassisAngle - Math.PI / 2) * 95;
+    const rz = bot.z + Math.cos(bot.chassisAngle - Math.PI / 2) * 95;
+    const leftClear = !solidProbe(lx, lz);
+    const rightClear = !solidProbe(rx, rz);
+    let dir;
+    if (leftClear && !rightClear) dir = 1;
+    else if (rightClear && !leftClear) dir = -1;
+    else dir = bot.botOrbitDir;
+    bot.botSteerDir = dir;
+    bot.botSteerUntil = now + 350 + Math.random() * 200; // держим обход, не дёргаемся
+    moveAngle = bot.chassisAngle + Math.PI / 2 * dir;
+    input.forward = true;
+  }
+
+  const turnDiff = angleDiff(moveAngle, bot.chassisAngle);
+  input.forward = steerActive || Math.abs(turnDiff) < 1.1;
+  input.back = false;
+  input.left = turnDiff > 0.1;
+  input.right = turnDiff < -0.1;
+
+  // Уперся в препятствие носом (forward задан, но места нет) — уходим вбок
+  const moved = Math.hypot(bot.x - (bot.botLastX || bot.x), bot.z - (bot.botLastZ || bot.z));
+  bot.botLastX = bot.x;
+  bot.botLastZ = bot.z;
+  if (!steerActive && input.forward && moved < 6) {
+    bot.botPushTime = (bot.botPushTime || 0) + dt;
+    if (bot.botPushTime > 0.55) {
+      bot.botPushTime = 0;
+      bot.botOrbitDir = -bot.botOrbitDir;
+      bot.botSteerDir = bot.botOrbitDir;
+      bot.botSteerUntil = now + 650 + Math.random() * 250;
+    }
+  } else {
+    bot.botPushTime = 0;
+  }
+}
+
 // Обработка временных способностей (регенерация, гроза, поджог, истечение)
 function processBuffs(p, dt, now) {
   for (const id in p.buffs) {
@@ -530,7 +757,7 @@ function processBuffs(p, dt, now) {
     if (id === 'storm') {
       if (now >= b.next) {
         b.next = now + 1500;
-        const targets = Object.values(players).filter(v => v.alive && v.id !== p.id);
+        const targets = Object.values(players).filter(v => v.alive && v.id !== p.id && v.team !== p.team);
         if (targets.length) {
           const target = targets[Math.floor(Math.random() * targets.length)];
           dealDamage(target, 15, p.id, target.x, target.z);
@@ -556,7 +783,7 @@ function applyTrampolines(p, now, dt) {
     if (tramp) {
       p.vy = TRAMPOLINE_BOUNCE;
       p.bounceCooldown = now + TRAMPOLINE_COOLDOWN_MS;
-      io.to(p.id).emit('bounce', {});
+      emitTo(p, 'bounce', {});
     }
   }
 }
@@ -744,7 +971,7 @@ function applyInstantAbility(ab, p, now) {
     case 'emp': {
       for (const id in players) {
         const t = players[id];
-        if (t.alive && t.id !== p.id) t.buffs.emp = { until: now + 4000 };
+        if (t.alive && t.id !== p.id && t.team !== p.team) t.buffs.emp = { until: now + 4000 };
       }
       break;
     }
@@ -771,13 +998,18 @@ function grantAbility(p, now) {
     p.buffs[ab.id] = { until: now + ab.dur, next: 0 };
   }
 
-  io.to(p.id).emit('roulette', {
+  emitTo(p, 'roulette', {
     ability: { id: ab.id, name: ab.name, desc: ab.desc, color: ab.color }
   });
 }
 
 function dealDamage(target, amount, attackerId, x, z, bullet, now) {
   if (!target.alive) return;
+  const attacker = players[attackerId];
+
+  // Командный режим: союзники не стреляют друг в друга
+  if (attacker && attacker.id !== target.id && attacker.team === target.team) return;
+
   if (now < target.spawnProtectUntil) {
     // защита после возрождения — урон не проходит
     io.emit('hit', { x: target.x, z: target.z, color: target.color, id: target.id, barrel: false, ownerId: attackerId, damage: 0 });
@@ -814,7 +1046,6 @@ function dealDamage(target, amount, attackerId, x, z, bullet, now) {
   if (buffActive(target, 'armor')) dmg *= 0.75;
   target.hp -= dmg;
 
-  const attacker = players[attackerId];
   if (attacker) {
     if (buffActive(attacker, 'lifesteal')) attacker.hp = Math.min(attacker.maxHp, attacker.hp + dmg * 0.25);
     if (target.flags.thorn && attacker.id !== target.id) {
@@ -877,7 +1108,15 @@ function dealDamage(target, amount, attackerId, x, z, bullet, now) {
       attacker.kills += 1;
       if (attacker.flags.rage) attacker.rageKills += 1;
       attacker.killsSinceUpgrade += 1;
-      io.to(attacker.id).emit('xp', { amount: XP_PER_KILL }); // опыт за кил
+      emitTo(attacker, 'xp', { amount: XP_PER_KILL }); // опыт за кил
+
+      // Командный счёт: фраг засчитывается команде стрелка
+      teamScore[attacker.team] += 1;
+      if (matchWinner === null && teamScore[attacker.team] >= KILLS_TO_WIN) {
+        matchWinner = attacker.team;
+        matchWinnerAt = now;
+        io.emit('matchEnd', { winner: matchWinner, score: [teamScore[0], teamScore[1]], names: TEAM_NAMES });
+      }
 
       if (attacker.killsSinceUpgrade >= KILLS_FOR_ROULETTE) {
         attacker.killsSinceUpgrade = 0;
@@ -913,6 +1152,8 @@ function broadcastState() {
       turretAngle: p.turretAngle,
       color: p.color,
       model: p.model,
+      team: p.team,
+      bot: !!p.bot,
       hp: p.hp,
       maxHp: p.maxHp,
       reloadMs: Math.round(BASE_RELOAD_MS),
@@ -939,10 +1180,21 @@ function broadcastState() {
     .map((o, i) => (o.type === 'tree' ? { i, standing: o.standing } : null))
     .filter(Boolean);
 
-  io.emit('state', { players: playersState, bullets: bulletsState, pickups: pickupsState, trampolines: TRAMPOLINES, trees: treesState });
+  io.emit('state', {
+    players: playersState,
+    bullets: bulletsState,
+    pickups: pickupsState,
+    trampolines: TRAMPOLINES,
+    trees: treesState,
+    teams: { score: teamScore, toWin: KILLS_TO_WIN, winner: matchWinner, names: TEAM_NAMES },
+  });
 }
 
 setInterval(tick, 1000 / TICK_RATE);
+
+// Боты выходят в бой при старте сервера
+spawnBots();
+console.log(`Командный режим: боты ${BOTS_PER_TEAM}x${BOTS_PER_TEAM}, победа до ${KILLS_TO_WIN} фрагов`);
 
 // ---------------------------------------------------------------------------
 // ЗАПУСК

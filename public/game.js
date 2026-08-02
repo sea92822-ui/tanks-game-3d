@@ -543,8 +543,8 @@ function ensureTrampolines(trampolines) {
 // ---------------------------------------------------------------------------
 const TANK_MODELS = [
   { id: 'medium', name: 'Тигр II', level: 1 },
-  { id: 'light',  name: 'Лёгкий',  level: 2 },
-  { id: 'heavy',  name: 'Т-90',    level: 6 },
+  { id: 'light',  name: 'Лёгкий',  level: 1 },
+  { id: 'heavy',  name: 'Т-90',    level: 1 },
 ];
 
 const TANK_MODEL_CFG = {
@@ -933,6 +933,32 @@ function colorAvailable(color) {
 let selectedModel = 'medium';
 try { selectedModel = localStorage.getItem('tanksModel') || 'medium'; } catch (e) { /* ignore */ }
 
+// ---------------------------------------------------------------------------
+// КОМАНДЫ: 0 — красные, 1 — синие, null — авто-баланс на сервере
+// ---------------------------------------------------------------------------
+const TEAM_NAMES_C = ['Красные', 'Синие'];
+const TEAM_COLORS_C = ['#e74c3c', '#3498db'];
+let selectedTeam = null;
+try {
+  const saved = localStorage.getItem('tanksTeam');
+  selectedTeam = (saved === '0' || saved === '1') ? Number(saved) : null;
+} catch (e) { /* ignore */ }
+let myTeam = null; // команда, выданная сервером после join
+
+function buildTeamPicker() {
+  const wrap = document.getElementById('teamButtons');
+  wrap.querySelectorAll('.teamBtn').forEach(btn => {
+    const team = btn.dataset.team === '' ? null : Number(btn.dataset.team);
+    if (selectedTeam === team) btn.classList.add('selected');
+    btn.addEventListener('click', () => {
+      selectedTeam = team;
+      try { localStorage.setItem('tanksTeam', team === null ? '' : String(team)); } catch (e) { /* ignore */ }
+      wrap.querySelectorAll('.teamBtn').forEach(x => x.classList.toggle('selected', x === btn));
+    });
+  });
+}
+buildTeamPicker();
+
 function buildModelPicker() {
   const wrap = document.getElementById('modelButtons');
   TANK_MODELS.forEach(m => {
@@ -1026,10 +1052,10 @@ function startGame() {
 // ПОДКЛЮЧЕНИЕ К СЕРВЕРУ
 // ---------------------------------------------------------------------------
 function connectToServer(nickname, color) {
-  socket = io();
+  socket = io({ transports: ['websocket', 'polling'] }); // WebSocket — низкая задержка
 
   socket.on('connect', () => {
-    socket.emit('join', { nickname, color, model: selectedModel });
+    socket.emit('join', { nickname, color, model: selectedModel, team: selectedTeam });
   });
 
   socket.on('init', (data) => {
@@ -1037,8 +1063,22 @@ function connectToServer(nickname, color) {
     world = data.world;
     obstaclesData = data.obstacles;
     maxHp = data.maxHp;
+    myTeam = data.team;
     buildGround();
     buildObstacles();
+  });
+
+  socket.on('matchEnd', (data) => {
+    const win = data.winner === myTeam;
+    const banner = document.getElementById('matchBanner');
+    banner.className = win ? 'show win' : 'show lose';
+    banner.textContent = win
+      ? '🏆 ПОБЕДА! Ваша команда выиграла ' + data.score[0] + ' : ' + data.score[1]
+      : '💥 Поражение ' + data.score[0] + ' : ' + data.score[1] + ' — победили ' + (data.names ? data.names[data.winner] : 'соперники');
+  });
+
+  socket.on('matchReset', () => {
+    document.getElementById('matchBanner').className = 'hidden';
   });
 
   socket.on('state', (state) => {
@@ -1046,6 +1086,13 @@ function connectToServer(nickname, color) {
     const cutoff = Date.now() - RENDER_DELAY;
     while (stateBuffer.length > 2 && stateBuffer[1].time <= cutoff) stateBuffer.shift();
     currentState = state;
+    // База предикции своего танка от последнего подтверждённого сервером состояния
+    const meState = state.players.find(p => p.id === selfId);
+    if (meState) {
+      if (meState.alive) updateSelfPrediction(meState);
+      else selfPred = null;
+    }
+    downTreeIdx = new Set((state.trees || []).filter(t => !t.standing).map(t => t.i));
     updateHUD();
     updateLeaderboard();
     checkDeathScreen();
@@ -1237,12 +1284,12 @@ function drawMinimap(now) {
     mmCtx.fillRect(pk.x / scale - 2, pk.z / scale - 2, 4, 4);
   });
 
-  // игроки
+  // игроки: цвет точки = команда (красные/синие), своя — белая
   currentState.players.forEach(p => {
     if (!p.alive) return;
     const px = p.x / scale, pz = p.z / scale;
     const isMe = p.id === selfId;
-    mmCtx.fillStyle = isMe ? '#ffffff' : p.color;
+    mmCtx.fillStyle = isMe ? '#ffffff' : (TEAM_COLORS_C[p.team] || p.color);
     mmCtx.beginPath();
     mmCtx.arc(px, pz, isMe ? 4 : 3, 0, Math.PI * 2);
     mmCtx.fill();
@@ -1602,17 +1649,17 @@ function updateScopeInfo() {
   const gz = camera.position.z + _scopeDir.z * t;
 
   let dist = Math.hypot(gx - camera.position.x, gz - camera.position.z);
-  let onTank = false;
+  let onTank = null; // null — нет танка, 'enemy' / 'ally'
   for (const p of currentState.players) {
     if (!p.alive || p.id === selfId) continue;
     if (Math.hypot(p.x - gx, p.z - gz) < 26) {
       dist = Math.hypot(p.x - camera.position.x, p.z - camera.position.z);
-      onTank = true;
+      onTank = p.team === myTeam ? 'ally' : 'enemy';
       break;
     }
   }
   scopeDistance.textContent = Math.round(dist) + ' м';
-  scopeDistance.style.color = onTank ? '#ff5a4d' : '#ddd';
+  scopeDistance.style.color = onTank === 'enemy' ? '#ff5a4d' : onTank === 'ally' ? '#2ecc71' : '#ddd';
 }
 
 // ---------------------------------------------------------------------------
@@ -1675,6 +1722,32 @@ function updateHUD() {
 
   updateActiveEffects(me.effects || []);
   updateMyRank(me);
+  updateTeamScore();
+}
+
+// ---------------------------------------------------------------------------
+// Командный счёт (Team Deathmatch): красные : синие, до KILLS_TO_WIN
+// ---------------------------------------------------------------------------
+let lastTeamScoreRender = 0;
+function updateTeamScore() {
+  const now = Date.now();
+  if (now - lastTeamScoreRender < 150) return;
+  lastTeamScoreRender = now;
+  const teams = currentState.teams;
+  if (!teams) return;
+  const red = document.getElementById('tsRed');
+  const blue = document.getElementById('tsBlue');
+  const toWin = document.getElementById('tsToWin');
+  if (!red || !blue) return;
+  red.textContent = `🔴 Красные ${teams.score[0]}`;
+  blue.textContent = `${teams.score[1]} Синие 🔵`;
+  if (myTeam === 0) red.classList.add('my');
+  else red.classList.remove('my');
+  if (myTeam === 1) blue.classList.add('my');
+  else blue.classList.remove('my');
+  toWin.textContent = `до ${teams.toWin}`;
+  const ts = document.getElementById('teamScore');
+  if (ts) ts.style.display = teams.score ? 'flex' : 'none';
 }
 
 // ---------------------------------------------------------------------------
@@ -1901,7 +1974,8 @@ function updateLeaderboard() {
   leaderboardList.innerHTML = sorted.map(p => `
     <li class="${p.id === selfId ? 'me' : ''}">
       <div class="lbRow">
-        <span class="name">${escapeHtml(p.nickname)}</span>
+        <span class="lbTeam lbTeam${p.team === 0 ? 'Red' : 'Blue'}"></span>
+        <span class="name">${escapeHtml(p.nickname)}${p.bot ? ' 🤖' : ''}</span>
         <span>${p.kills}/${p.deaths}</span>
       </div>
       <div class="lbRank">${rankName(p.kills)}</div>
@@ -2077,6 +2151,117 @@ function getInterpolatedPlayers() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// ПРЕДИКЦИЯ СВОЕГО ТАНКА: мгновенный отклик на клавиши при высоком пинге.
+// От базовой позиции последнего state мы сами просчитываем движение локально
+// (те же константы физики, что на сервере), сервер потом подтверждает.
+// ---------------------------------------------------------------------------
+const PRED_TURN = 2.6, PRED_TURRET = 12, PRED_SPEED = 160, PRED_RADIUS = 20;
+let selfPred = null;   // { baseTime, x, z, chassisAngle, turretAngle } — база от последнего state
+let selfVisX = 0, selfVisZ = 0, selfVisInit = false; // сглаженная позиция (прыжки при рассинхроне)
+let downTreeIdx = new Set(); // индексы поваленных деревьев
+
+function updateSelfPrediction(me) {
+  selfPred = { baseTime: Date.now(), x: me.x, z: me.z, chassisAngle: me.chassisAngle, turretAngle: me.turretAngle };
+}
+
+function selfBuffActiveC(id) {
+  const me = currentState.players.find(p => p.id === selfId);
+  if (!me) return false;
+  return (me.effects || []).some(e => e.id === id);
+}
+
+function circleRectClient(cx, cz, r, rect) {
+  const closestX = Math.max(rect.x, Math.min(cx, rect.x + rect.w));
+  const closestZ = Math.max(rect.z, Math.min(cz, rect.z + rect.d));
+  const dx = cx - closestX, dz = cz - closestZ;
+  return (dx * dx + dz * dz) < r * r;
+}
+
+function clientBlocked(x, z) {
+  if (x < PRED_RADIUS || x > 6000 - PRED_RADIUS || z < PRED_RADIUS || z > 6000 - PRED_RADIUS) return true;
+  for (let i = 0; i < obstaclesData.length; i++) {
+    const o = obstaclesData[i];
+    if (o.type === 'tree' && downTreeIdx.has(i)) continue;
+    if (circleRectClient(x, z, PRED_RADIUS, o)) return true;
+  }
+  return false;
+}
+
+function lerpAngleAdvance(a, b, t) {
+  let diff = b - a;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  if (Math.abs(diff) <= t) return b;
+  return a + Math.sign(diff) * t;
+}
+
+function predictedSelf() {
+  if (!selfPred) return null;
+  const dt = Math.min((Date.now() - selfPred.baseTime) / 1000, 1.5);
+  let x = selfPred.x, z = selfPred.z;
+  let ch = selfPred.chassisAngle;
+  let tur = selfPred.turretAngle;
+
+  // Башня доворачивается к мыши (та же скорость, что на сервере)
+  let turretMult = 1;
+  if (selfBuffActiveC('fastturret')) turretMult *= 2;
+  if (selfBuffActiveC('overdrive')) turretMult *= 1.4;
+  tur = lerpAngleAdvance(tur, targetTurretAngle, PRED_TURRET * turretMult * dt);
+
+  // Поворот корпуса
+  let turnMult = 1;
+  if (selfBuffActiveC('spin')) turnMult *= 1.8;
+  if (selfBuffActiveC('overdrive')) turnMult *= 1.15;
+  if (selfBuffActiveC('emp')) turnMult *= 0.7;
+  if (selfBuffActiveC('slow')) turnMult *= 0.6;
+  if (keys.left) ch += PRED_TURN * turnMult * dt;
+  if (keys.right) ch -= PRED_TURN * turnMult * dt;
+
+  // Движение с локальной проверкой препятствий
+  let speedMult = 1;
+  if (selfBuffActiveC('speed')) speedMult *= 1.35;
+  if (selfBuffActiveC('overdrive')) speedMult *= 1.15;
+  if (selfBuffActiveC('emp')) speedMult *= 0.7;
+  if (selfBuffActiveC('slow')) speedMult *= 0.6;
+  let dir = 0;
+  if (keys.forward) dir += 1;
+  if (keys.back) dir -= 1;
+  if (dir !== 0) {
+    const step = PRED_SPEED * speedMult * dt * dir;
+    const nx = x + Math.sin(ch) * step;
+    const nz = z + Math.cos(ch) * step;
+    if (!clientBlocked(nx, z)) x = nx;
+    if (!clientBlocked(x, nz)) z = nz;
+  }
+  return { x, z, chassisAngle: ch, turretAngle: tur };
+}
+
+// Наложить предсказанную позицию своего танка на список для рендера
+function applySelfPrediction(players, dt) {
+  const pred = predictedSelf();
+  if (!pred) return players;
+  const i = players.findIndex(p => p.id === selfId);
+  if (i < 0) return players;
+  if (!selfVisInit) {
+    selfVisX = pred.x; selfVisZ = pred.z;
+    selfVisInit = true;
+  }
+  const dx = pred.x - selfVisX, dz = pred.z - selfVisZ;
+  const jump = Math.hypot(dx, dz);
+  const k = jump > 8 ? 1 - Math.exp(-6 * dt) : 1; // прыжок — плавно догоняем сервер
+  selfVisX += dx * k;
+  selfVisZ += dz * k;
+  players[i] = {
+    ...players[i],
+    x: selfVisX,
+    z: selfVisZ,
+    chassisAngle: pred.chassisAngle,
+    turretAngle: pred.turretAngle,
+  };
+  return players;
+}
+
 function getInterpolatedBullets() {
   if (stateBuffer.length === 0) return [];
   const renderTime = Date.now() - RENDER_DELAY;
@@ -2189,6 +2374,76 @@ function syncTanks(players) {
       playerPrevMoving.delete(id);
       wreckedTimers.delete(id);
       tankPrevY.delete(id);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// МЕТКИ КОМАНД НАД ТАНКАМИ: имя + HP в цвете команды (DOM-слой)
+// ---------------------------------------------------------------------------
+const tankLabelEls = new Map(); // id -> { root, name, hpFill, hpWrap }
+const labelProjV = new THREE.Vector3();
+
+function getTankLabelEl(p) {
+  let el = tankLabelEls.get(p.id);
+  if (el) return el;
+  const root = document.createElement('div');
+  root.className = 'tankLabel';
+  root.innerHTML = '<div class="tlName"></div><div class="tlHp"><div class="tlHpFill"></div></div>';
+  document.getElementById('tankLabels').appendChild(root);
+  el = { root, name: root.querySelector('.tlName'), hpFill: root.querySelector('.tlHpFill') };
+  tankLabelEls.set(p.id, el);
+  return el;
+}
+
+function updateTankLabels(players) {
+  const labelsEl = document.getElementById('tankLabels');
+  if (!labelsEl) return;
+  const w = renderer.domElement.clientWidth || window.innerWidth;
+  const h = renderer.domElement.clientHeight || window.innerHeight;
+
+  players.forEach(p => {
+    const el = tankLabelEls.get(p.id);
+    if (p.id === selfId || !p.alive) {
+      if (el) el.root.style.display = 'none'; // мёртвый или свой — метку прячем
+      return;
+    }
+    const st = currentState.players.find(x => x.id === p.id);
+    const invis = st && (st.effects || []).some(e => e.id === 'invis');
+    if (invis) {
+      if (el) el.root.style.display = 'none';
+      return;
+    }
+
+    const label = getTankLabelEl(p);
+    const teamColor = TEAM_COLORS_C[p.team] || '#ffffff';
+    label.name.textContent = (p.bot ? '🤖 ' : '') + p.nickname;
+    label.name.style.color = teamColor;
+    const pct = Math.max(0, Math.min(100, (p.hp / p.maxHp) * 100));
+    label.hpFill.style.width = pct + '%';
+    label.hpFill.style.background = teamColor;
+    label.root.classList.toggle('enemy', p.team !== myTeam);
+    label.root.classList.toggle('ally', p.team === myTeam);
+
+    labelProjV.set(p.x, 46, p.z);
+    const dist = labelProjV.distanceTo(camera.position);
+    labelProjV.project(camera);
+    if (labelProjV.z > 1 || dist > 1500) {
+      label.root.style.display = 'none';
+      return;
+    }
+    const px = (labelProjV.x * 0.5 + 0.5) * w;
+    const py = (-labelProjV.y * 0.5 + 0.5) * h;
+    label.root.style.left = px + 'px';
+    label.root.style.top = py + 'px';
+    label.root.style.display = '';
+  });
+
+  // убираем метки пропавших игроков
+  for (const [id, el] of tankLabelEls) {
+    if (!players.some(p => p.id === id)) {
+      el.root.remove();
+      tankLabelEls.delete(id);
     }
   }
 }
@@ -3090,6 +3345,7 @@ function animate() {
   if (selfId) {
     const players = getInterpolatedPlayers();
     const bullets = getInterpolatedBullets();
+    applySelfPrediction(players, dt);
 
     syncTanks(players);
     syncBullets(bullets);
@@ -3113,6 +3369,7 @@ function animate() {
     updateFallingTrees(now);
     drawMinimap(now);
     updateCamera(players);
+    updateTankLabels(players);
     skyDome.position.copy(camera.position);
   }
 
