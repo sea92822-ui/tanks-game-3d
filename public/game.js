@@ -25,7 +25,7 @@ window.addEventListener('unhandledrejection', (e) => showFatalError('Promise: ' 
 const sceneContainer = document.getElementById('sceneContainer');
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x8fc1e0);
+scene.background = new THREE.Color(0x8fb8e8);
 
 // ---------------------------------------------------------------------------
 // ОБЛАКА НА НЕБЕ (медленно плывут, зациклены)
@@ -77,18 +77,18 @@ window.addEventListener('resize', () => {
 // ---------------------------------------------------------------------------
 // СВЕТ
 // ---------------------------------------------------------------------------
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
+const ambientLight = new THREE.AmbientLight(0xcfe4ff, 0.3);
 scene.add(ambientLight);
 
-const hemiLight = new THREE.HemisphereLight(0xbfd8ff, 0x3a6b3d, 0.5);
+const hemiLight = new THREE.HemisphereLight(0xffd9b0, 0x2f5a2f, 0.45);
 scene.add(hemiLight);
 
-const sunLight = new THREE.DirectionalLight(0xfff4e0, 1.0);
+const sunLight = new THREE.DirectionalLight(0xffb070, 1.3);
 sunLight.position.set(300, 500, 200);
 sunLight.castShadow = true;
 sunLight.shadow.bias = -0.0008;
 sunLight.shadow.normalBias = 1.5; // чистая самотень без артефактов
-sunLight.shadow.radius = 4; // мягкие края теней
+sunLight.shadow.radius = 6; // мягкие края теней
 sunLight.shadow.camera.near = 50;
 sunLight.shadow.camera.far = 1500;
 sunLight.shadow.camera.left = -800;
@@ -109,9 +109,9 @@ const skyDome = new THREE.Mesh(
     depthWrite: false,
     fog: false,
     uniforms: {
-      topColor: { value: new THREE.Color(0x2f6fd0) },
-      midColor: { value: new THREE.Color(0x7db9e8) },
-      botColor: { value: new THREE.Color(0xd8e8e0) },
+      topColor: { value: new THREE.Color(0x1e4fa0) },
+      midColor: { value: new THREE.Color(0x8fb8e8) },
+      botColor: { value: new THREE.Color(0xf5b87e) },
     },
     vertexShader: `
       varying vec3 vWorldPos;
@@ -134,6 +134,9 @@ const skyDome = new THREE.Mesh(
   })
 );
 scene.add(skyDome);
+
+// Лёгкая тёплая дымка: дальние объекты и край карты мягко растворяются (создаёт масштаб)
+scene.fog = new THREE.Fog(0xf2c9a0, 2500, 6200);
 
 // Вспышка у дула (общий свет для всех выстрелов)
 const muzzleLight = new THREE.PointLight(0xffaa44, 0, 240);
@@ -1674,6 +1677,9 @@ const playerExhaustTimers = new Map();
 const exhaustPrevPos = new Map(); // позиции для расчёта скорости (у выхлопа свои, не путать с dust)
 const playerPrevMoving = new Map();
 const prevPlayerPos = new Map();
+const prevChassisAngles = new Map(); // для расчёта резкости поворота (комки грязи)
+const prevSpeeds = new Map();        // для определения разгона
+const playerClodTimers = new Map();  // таймер комков грязи из-под гусениц
 
 // Дым из выхлопа (постоянно при движении, клуб при старте)
 function emitExhaust(players, dt) {
@@ -1743,32 +1749,90 @@ function emitTrackDust(players, dt) {
     let speed = 0;
     if (prev) speed = Math.hypot(p.x - prev.x, p.z - prev.z) / Math.max(dt, 0.001);
     prevPlayerPos.set(p.id, { x: p.x, z: p.z });
-    if (speed < 25) return;
 
+    // Резкость поворота (рад/с) с учётом перехода через ±PI
+    const prevA = prevChassisAngles.get(p.id);
+    let turnSign = 0;
+    let turnRate = 0;
+    if (prevA !== undefined) {
+      let d = p.chassisAngle - prevA;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      turnSign = d > 0 ? 1 : -1;
+      turnRate = Math.abs(d) / Math.max(dt, 0.001);
+    }
+    prevChassisAngles.set(p.id, p.chassisAngle);
+
+    // Разгон: скорость выросла заметно за кадр
+    const prevSp = prevSpeeds.get(p.id);
+    const accel = prevSp !== undefined && speed > prevSp + 35;
+    prevSpeeds.set(p.id, speed);
+
+    const hardTurn = turnRate > 1.4; // резкий поворот/разворот на месте
+
+    // Пыль назад от движения (интенсивнее при повороте/разгоне)
     let t = playerDustTimers.get(p.id) || 0;
     t -= dt;
-    if (t > 0) { playerDustTimers.set(p.id, t); return; }
-    playerDustTimers.set(p.id, 0.1);
+    if (t <= 0) {
+      playerDustTimers.set(p.id, hardTurn || accel ? 0.05 : 0.1);
+      const bx = -Math.sin(p.chassisAngle);
+      const bz = -Math.cos(p.chassisAngle);
+      const bursts = hardTurn ? 2 : 1;
+      for (let b = 0; b < bursts; b++) {
+        for (const side of [-1, 1]) {
+          const tx = p.x + Math.cos(p.chassisAngle) * side * 15;
+          const tz = p.z - Math.sin(p.chassisAngle) * side * 15;
+          const mat = new THREE.MeshBasicMaterial({ color: Math.random() < 0.5 ? 0x8a7a55 : 0x6b5b3f, transparent: true });
+          const mesh = new THREE.Mesh(particleGeo, mat);
+          mesh.scale.setScalar(2 + Math.random() * 2.5);
+          mesh.position.set(tx + (Math.random() - 0.5) * 4, 1 + Math.random() * 2, tz + (Math.random() - 0.5) * 4);
+          scene.add(mesh);
+          particles.push({
+            mesh,
+            vx: bx * 70 + (Math.random() - 0.5) * 30,
+            vy: 15 + Math.random() * 25,
+            vz: bz * 70 + (Math.random() - 0.5) * 30,
+            born: performance.now(),
+            life: 600 + Math.random() * 300,
+          });
+        }
+      }
+    } else {
+      playerDustTimers.set(p.id, t);
+    }
 
-    // пыль вылетает назад от движения
+    // Комки грязи/травы: при движении, особенно при резком повороте или разгоне
+    if (!hardTurn && !accel && speed < 25) return;
+    let ct = playerClodTimers.get(p.id) || 0;
+    ct -= dt;
+    if (ct > 0) { playerClodTimers.set(p.id, ct); return; }
+    playerClodTimers.set(p.id, hardTurn ? 0.08 : 0.16);
+
     const bx = -Math.sin(p.chassisAngle);
     const bz = -Math.cos(p.chassisAngle);
-
-    for (const side of [-1, 1]) {
-      const tx = p.x + Math.cos(p.chassisAngle) * side * 15;
-      const tz = p.z - Math.sin(p.chassisAngle) * side * 15;
-      const mat = new THREE.MeshBasicMaterial({ color: Math.random() < 0.5 ? 0xb8a888 : 0xa59078, transparent: true });
+    // при повороте комки вылетают наружу поворота, при разгоне — назад
+    const latX = Math.cos(p.chassisAngle) * turnSign;
+    const latZ = -Math.sin(p.chassisAngle) * turnSign;
+    const clodCount = hardTurn ? 4 : 2;
+    for (let i = 0; i < clodCount; i++) {
+      const side = Math.random() < 0.5 ? 1 : -1;
+      const tx = p.x + Math.cos(p.chassisAngle) * side * (13 + Math.random() * 5);
+      const tz = p.z - Math.sin(p.chassisAngle) * side * (13 + Math.random() * 5);
+      const mat = new THREE.MeshBasicMaterial({ color: [0x5a4630, 0x6b5233, 0x4a3826, 0x557a3a][Math.floor(Math.random() * 4)], transparent: true });
       const mesh = new THREE.Mesh(particleGeo, mat);
-      mesh.scale.setScalar(2 + Math.random() * 2.5);
-      mesh.position.set(tx + (Math.random() - 0.5) * 4, 1 + Math.random() * 2, tz + (Math.random() - 0.5) * 4);
+      mesh.scale.setScalar(1.6 + Math.random() * 1.6);
+      mesh.position.set(tx, 0.6 + Math.random() * 1.5, tz);
       scene.add(mesh);
+      const latPow = hardTurn ? 1 : 0.35; // при повороте грязь летит сильнее вбок
       particles.push({
         mesh,
-        vx: bx * 70 + (Math.random() - 0.5) * 30,
-        vy: 15 + Math.random() * 25,
-        vz: bz * 70 + (Math.random() - 0.5) * 30,
+        vx: -bx * (40 + Math.random() * 60) + latX * (30 + Math.random() * 90) * latPow,
+        vy: 45 + Math.random() * 60,
+        vz: -bz * (40 + Math.random() * 60) + latZ * (30 + Math.random() * 90) * latPow,
+        grav: 150, // комки тяжёлые — быстро падают
+        grow: 0.3,
         born: performance.now(),
-        life: 600 + Math.random() * 300,
+        life: 450 + Math.random() * 350,
       });
     }
   });
@@ -2086,6 +2150,9 @@ function syncTanks(players) {
       tankMeshes.delete(id);
       playerDustTimers.delete(id);
       prevPlayerPos.delete(id);
+      prevChassisAngles.delete(id);
+      prevSpeeds.delete(id);
+      playerClodTimers.delete(id);
       playerExhaustTimers.delete(id);
       exhaustPrevPos.delete(id);
       playerPrevMoving.delete(id);
@@ -2573,7 +2640,9 @@ function breakOffBarrel(tankId) {
 // ---------------------------------------------------------------------------
 // СЛЕДЫ ГУСЕНИЦ
 // ---------------------------------------------------------------------------
-const trackGeo = new THREE.PlaneGeometry(3.4, 9);
+// Объёмный след гусеницы: коробка с высотой (3.2 ширина, 9 длина, 0.22 высота).
+// Ориентация: после rotation.x=-PI/2 длина ложится вдоль Z, высота — в мировую Y.
+const trackGeo = new THREE.BoxGeometry(3.2, 9, 0.22);
 const trackMarks = []; // { mesh, born }
 const trackPool = [];
 const TRACK_MARK_DIST = 9;
@@ -2585,13 +2654,14 @@ function placeTrackMark(x, z, angle) {
   if (trackMarks.length >= TRACK_MAX_MARKS) return;
   let mesh = trackPool.pop();
   if (!mesh) {
-    mesh = new THREE.Mesh(trackGeo, new THREE.MeshBasicMaterial({ color: 0x1c1c1c, transparent: true, depthWrite: false }));
+    // тёмно-землистый цвет протектора, слегка возвышается над травой
+    mesh = new THREE.Mesh(trackGeo, new THREE.MeshBasicMaterial({ color: 0x171310, transparent: true, depthWrite: false }));
     mesh.rotation.x = -Math.PI / 2;
     scene.add(mesh);
   }
-    mesh.position.set(x, 0.06, z);
+    mesh.position.set(x, 0.13, z); // верх следа над травой — «объёмный» протектор
     mesh.rotation.z = Math.PI / 2 - angle;
-    mesh.material.opacity = 0.45;
+    mesh.material.opacity = 0.55;
     mesh.visible = true;
     trackMarks.push({ mesh, born: performance.now() });
 }
@@ -2606,7 +2676,7 @@ function updateTrackMarks(players, now) {
       trackMarks.splice(i, 1);
       continue;
     }
-    m.mesh.material.opacity = 0.45 * (1 - age / TRACK_LIFE_MS);
+    m.mesh.material.opacity = 0.55 * (1 - age / TRACK_LIFE_MS);
   }
 
   players.forEach(p => {
