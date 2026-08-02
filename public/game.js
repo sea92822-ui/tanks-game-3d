@@ -877,6 +877,9 @@ let wasAlive = true;
 const nicknameOverlay = document.getElementById('nicknameOverlay');
 const nicknameInput = document.getElementById('nicknameInput');
 const startBtn = document.getElementById('startBtn');
+const chatInput = document.getElementById('chatInput');
+const chatLog = document.getElementById('chatLog');
+const botsCheckbox = document.getElementById('botsCheckbox');
 
 const TANK_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#ff6fa4',
   '#34495e', '#16a085', '#d35400', '#7f8c8d', '#8e44ad', '#ffffff'];
@@ -1041,10 +1044,14 @@ nicknameInput.focus();
 startBtn.addEventListener('click', startGame);
 nicknameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') startGame(); });
 
+// Запоминаем выбор «играть с ботами»
+if (localStorage.getItem('tanksBots') === '0') botsCheckbox.checked = false;
+
 function startGame() {
   const nickname = nicknameInput.value.trim();
   unlockAudio(); // разблокируем звук по жесту пользователя
   nicknameOverlay.classList.add('hidden');
+  localStorage.setItem('tanksBots', botsCheckbox.checked ? '1' : '0');
   connectToServer(nickname, selectedColor);
 }
 
@@ -1055,7 +1062,7 @@ function connectToServer(nickname, color) {
   socket = io({ transports: ['websocket', 'polling'] }); // WebSocket — низкая задержка
 
   socket.on('connect', () => {
-    socket.emit('join', { nickname, color, model: selectedModel, team: selectedTeam });
+    socket.emit('join', { nickname, color, model: selectedModel, team: selectedTeam, withBots: botsCheckbox.checked });
   });
 
   socket.on('init', (data) => {
@@ -1147,12 +1154,59 @@ function connectToServer(nickname, color) {
     pingMs = Date.now() - pingSentAt;
   });
 
+  socket.on('chatMsg', (data) => {
+    addChatMsg(data);
+  });
+
   socket.on('xp', (data) => {
     addXp(data.amount);
     const me = currentState.players.find(p => p.id === selfId);
     if (me) showDamageText(me.x, me.z, '+' + data.amount + ' XP', '#9b59b6');
   });
 }
+
+// ---------------------------------------------------------------------------
+// ОБЩИЙ ЧАТ
+// ---------------------------------------------------------------------------
+function addChatMsg(data) {
+  if (!data || !data.text) return;
+  const line = document.createElement('div');
+  line.className = 'chatMsg' + (data.system ? ' chatSystem' : '') + (data.bot ? ' chatBot' : '');
+  if (data.system) {
+    line.textContent = data.text;
+  } else {
+    const name = document.createElement('span');
+    name.className = 'chatName';
+    name.style.color = data.color || '#fff';
+    name.textContent = (data.bot ? '🤖 ' : '') + data.from;
+    line.appendChild(name);
+    line.appendChild(document.createTextNode(data.text));
+  }
+  chatLog.appendChild(line);
+  while (chatLog.children.length > 50) chatLog.removeChild(chatLog.firstChild);
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function chatActive() {
+  return document.activeElement === chatInput;
+}
+
+function sendChat() {
+  const text = chatInput.value.trim();
+  chatInput.value = '';
+  if (text && socket && socket.connected) socket.emit('chat', { text });
+  chatInput.blur();
+}
+
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); sendChat(); }
+  else if (e.key === 'Escape') { e.preventDefault(); chatInput.blur(); }
+  e.stopPropagation();
+});
+chatInput.addEventListener('focus', () => {
+  // не едем, пока печатаем (если клавиши движения были зажаты)
+  keys.forward = keys.back = keys.left = keys.right = false;
+});
 
 // Замер пинга каждую секунду
 let pingMs = null;
@@ -1169,6 +1223,7 @@ setInterval(() => {
 const keys = { forward: false, back: false, left: false, right: false, shooting: false, camLeft: false, camRight: false };
 
 window.addEventListener('keydown', (e) => {
+  if (chatActive()) return; // пока печатаем — клавиши игры не работают
   switch (e.code) {
     case 'KeyW': case 'ArrowUp': keys.forward = true; break;
     case 'KeyS': case 'ArrowDown': keys.back = true; break;
@@ -1179,6 +1234,7 @@ window.addEventListener('keydown', (e) => {
     case 'Digit1': setAmmo('ap'); break;
     case 'Digit2': setAmmo('he'); break;
     case 'KeyX': callArtillery(); break;
+    case 'KeyT': chatInput.focus(); break;
   }
 });
 window.addEventListener('keyup', (e) => {
@@ -1206,6 +1262,7 @@ let mouseNDC = new THREE.Vector2(0, 0);
 // Обычный режим: наводим башню рейкастом мыши на землю
 window.addEventListener('mousemove', (e) => {
   if (isTouchGhost()) return;
+  if (chatActive()) return; // не дёргаем башню, пока печатаем в чат
   if (isScoped) {
     // Pointer Lock режим: вращаем башню напрямую через движение мыши
     const sensitivity = 0.0022;
@@ -1220,6 +1277,7 @@ window.addEventListener('mousemove', (e) => {
 
 window.addEventListener('mousedown', (e) => {
   if (isTouchGhost()) return;
+  if (chatActive()) return; // клики при вводе текста в чат не стреляют
   if (e.target.closest('#settingsPanel, #settingsBtn')) return;
   if (e.button === 0) keys.shooting = true;
   if (e.button === 2) enterScope();

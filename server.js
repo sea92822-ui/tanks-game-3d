@@ -50,6 +50,8 @@ const TEAM_COLORS = ['#e74c3c', '#3498db'];   // цвет команды (мар
 const KILLS_TO_WIN = 10;                      // первый до 10 фрагов — победа
 const MATCH_RESET_MS = 6000;                  // пауза между матчами
 const BOTS_PER_TEAM = 3;                      // боты с каждой стороны
+const BOTS_FORCED_OFF = process.env.BOTS === '0'; // env BOTS=0 — сервер без ботов
+let botsEnabled = !BOTS_FORCED_OFF;           // отключаются, если все игроки выбрали «без ботов»
 let teamScore = [0, 0];
 let matchWinner = null;      // 0 / 1 — команда-победитель
 let matchWinnerAt = 0;
@@ -59,6 +61,7 @@ const BOT_NAMES = [
   ['Молот', 'Гром', 'Броня', 'Титан', 'Вихрь'],
   ['Шквал', 'Буран', 'Айсберг', 'Молния', 'Кристалл'],
 ];
+const BOT_TAUNTS = ['Готово!', 'Так ему и надо', 'Хех, лёгкая цель', 'Не выйдет, братан', 'Цель уничтожена', 'Эх, быстрая смерть', 'Вот это заезд!'];
 let botCounter = 1;
 
 // Артиллерия: удар по точке раз в минуту (с задержкой падения снаряда)
@@ -344,6 +347,8 @@ function createPlayer(id, nickname, color, model, team) {
     respawnAt: 0,
     killsSinceUpgrade: 0,
     artilleryReadyAt: 0, // раз в минуту можно вызвать артиллерию
+    withBots: true,     // игрок хочет играть с ботами
+    chatCooldownUntil: 0, // защита от спама в чате
   };
 }
 
@@ -381,6 +386,31 @@ function spawnBots() {
   }
 }
 
+// Боты есть, только пока хотя бы один живой игрок хочет их видеть
+function anyHumanWantsBots() {
+  for (const id in players) {
+    const p = players[id];
+    if (!p.bot && p.withBots) return true;
+  }
+  return false;
+}
+
+function syncBots() {
+  if (BOTS_FORCED_OFF) return;
+  const want = anyHumanWantsBots();
+  if (!want && botsEnabled) {
+    botsEnabled = false;
+    for (const id in players) {
+      if (players[id].bot) delete players[id];
+    }
+    console.log('Боты покинули бой: все игроки выбрали игру без ботов');
+  } else if (want && !botsEnabled) {
+    botsEnabled = true;
+    spawnBots();
+    console.log('Боты вышли в бой: игрок запросил игру с ботами');
+  }
+}
+
 // Рассылка только живым людям (у ботов нет сокета)
 function emitTo(p, event, data) {
   if (p && !p.bot) io.to(p.id).emit(event, data);
@@ -396,7 +426,9 @@ io.on('connection', (socket) => {
     const color = data && TANK_COLORS.includes(data.color) ? data.color : null;
     const team = data && (data.team === 0 || data.team === 1) ? data.team : null;
     const player = createPlayer(socket.id, nickname, color, data && data.model, team);
+    if (data && typeof data.withBots === 'boolean') player.withBots = data.withBots;
     players[socket.id] = player;
+    syncBots();
 
     socket.emit('init', {
       selfId: socket.id,
@@ -407,7 +439,19 @@ io.on('connection', (socket) => {
       teams: { score: teamScore, toWin: KILLS_TO_WIN, winner: matchWinner },
     });
 
-    console.log(`Игрок подключился: ${player.nickname} (${socket.id}) команда ${TEAM_NAMES[player.team]}`);
+    console.log(`Игрок подключился: ${player.nickname} (${socket.id}) команда ${TEAM_NAMES[player.team]} withBots=${player.withBots}`);
+  });
+
+  // Общий чат
+  socket.on('chat', (data) => {
+    const p = players[socket.id];
+    if (!p) return;
+    const text = data && typeof data.text === 'string' ? data.text.trim().slice(0, 160) : '';
+    if (!text) return;
+    const now = Date.now();
+    if (now < p.chatCooldownUntil) return;
+    p.chatCooldownUntil = now + 400; // не чаще ~2.5 сообщений в секунду
+    io.emit('chatMsg', { from: p.nickname, color: p.color, team: p.team, text });
   });
 
   socket.on('artillery', (data) => {
@@ -439,6 +483,7 @@ io.on('connection', (socket) => {
     const p = players[socket.id];
     if (p) console.log(`Игрок отключился: ${p.nickname}`);
     delete players[socket.id];
+    syncBots();
   });
 });
 
@@ -457,6 +502,7 @@ function tick() {
     matchWinner = null;
     teamScore = [0, 0];
     io.emit('matchReset', { score: teamScore });
+    io.emit('chatMsg', { system: true, text: '🔄 Новый раунд — в бой!' });
   }
 
   for (const id in players) {
@@ -1110,12 +1156,21 @@ function dealDamage(target, amount, attackerId, x, z, bullet, now) {
       attacker.killsSinceUpgrade += 1;
       emitTo(attacker, 'xp', { amount: XP_PER_KILL }); // опыт за кил
 
+      // Реплика бота в чат (нечасто, чтобы не спамить)
+      if (attacker.bot && Math.random() < 0.4) {
+        io.emit('chatMsg', {
+          from: attacker.nickname, color: attacker.color, team: attacker.team, bot: true,
+          text: BOT_TAUNTS[Math.floor(Math.random() * BOT_TAUNTS.length)]
+        });
+      }
+
       // Командный счёт: фраг засчитывается команде стрелка
       teamScore[attacker.team] += 1;
       if (matchWinner === null && teamScore[attacker.team] >= KILLS_TO_WIN) {
         matchWinner = attacker.team;
         matchWinnerAt = now;
         io.emit('matchEnd', { winner: matchWinner, score: [teamScore[0], teamScore[1]], names: TEAM_NAMES });
+        io.emit('chatMsg', { system: true, text: `🏆 Победа команды «${TEAM_NAMES[matchWinner]}» со счётом ${teamScore[0]} : ${teamScore[1]}!` });
       }
 
       if (attacker.killsSinceUpgrade >= KILLS_FOR_ROULETTE) {
@@ -1193,8 +1248,8 @@ function broadcastState() {
 setInterval(tick, 1000 / TICK_RATE);
 
 // Боты выходят в бой при старте сервера
-spawnBots();
-console.log(`Командный режим: боты ${BOTS_PER_TEAM}x${BOTS_PER_TEAM}, победа до ${KILLS_TO_WIN} фрагов`);
+if (botsEnabled) spawnBots(); // при BOTS=0 сервер стартует без ботов
+console.log(`Командный режим: боты ${botsEnabled ? BOTS_PER_TEAM + 'x' + BOTS_PER_TEAM : 'выключены'}, победа до ${KILLS_TO_WIN} фрагов`);
 
 // ---------------------------------------------------------------------------
 // ЗАПУСК

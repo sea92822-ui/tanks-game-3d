@@ -5,7 +5,7 @@
   <link rel="icon" href="data:,"> <!-- отключает запрос favicon.ico (404 в консоли) -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Танчики 3D Online</title>
-  <link rel="stylesheet" href="style.css?v=3">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 
@@ -32,7 +32,7 @@
       <div id="artilleryFill"></div>
       <span id="artilleryText">АРТИЛЛЕРИЯ · X</span>
     </div>
-    <div id="controlsHint">W/S — вперёд/назад · A/D — поворот · Мышь — прицел башней · ЛКМ — огонь · ПКМ (зажать) — прицел от 1 лица · Q/E — камера · Колесо — зум · 1/2 — тип снаряда</div>
+    <div id="controlsHint">W/S — вперёд/назад · A/D — поворот · Мышь — прицел башней · ЛКМ — огонь · ПКМ (зажать) — прицел от 1 лица · Q/E — камера · Колесо — зум · 1/2 — тип снаряда · T — чат</div>
     <div id="activeEffects"></div>
     <div id="ammoPanel">
       <button id="ammoAp" class="ammoBtn active">1 · Бронебойный</button>
@@ -53,6 +53,12 @@
 
   <!-- Баннер победы команды -->
   <div id="matchBanner" class="hidden"></div>
+
+  <!-- Общий чат -->
+  <div id="chatPanel">
+    <div id="chatLog"></div>
+    <input type="text" id="chatInput" maxlength="160" placeholder="Чат: T — открыть, Enter — отправить">
+  </div>
 
   <!-- Метки имён и HP над танками -->
   <div id="tankLabels"></div>
@@ -122,6 +128,7 @@
           <button type="button" class="teamBtn teamAuto" data-team="">⚖️ Авто</button>
         </div>
       </div>
+      <label id="botsToggle" title="Боты займут свободные места в обеих командах"><input type="checkbox" id="botsCheckbox" checked> Играть с ботами (3×3)</label>
       <button id="startBtn">В БОЙ!</button>
       <button id="menuSettingsBtn" type="button">⚙️ Настройки</button>
     </div>
@@ -168,6 +175,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="vendor/GLTFLoader.js"></script>
   <script src="vendor/RoomEnvironment.js"></script>
-  <script src="game.js?v=18"></script>
+  <script src="game.js?v=19"></script>
 </body>
 </html>

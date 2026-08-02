@@ -696,6 +696,93 @@ html, body {
   transform: translateY(-2px);
 }
 
+#botsToggle {
+  display: block;
+  margin: 10px auto 16px;
+  color: #cfe3ff;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+#botsCheckbox {
+  margin-right: 6px;
+  accent-color: #2ecc71;
+}
+
+/* Общий чат */
+#chatPanel {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  width: 340px;
+  z-index: 25;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+#chatLog {
+  max-height: 150px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.chatMsg {
+  background: rgba(0, 0, 0, 0.45);
+  border-left: 2px solid transparent;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: #eee;
+  text-shadow: 0 1px 2px #000;
+  word-break: break-word;
+}
+
+.chatName {
+  font-weight: 700;
+  margin-right: 6px;
+}
+
+.chatSystem {
+  color: #ffd76a;
+  font-style: italic;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.chatBot {
+  opacity: 0.9;
+}
+
+#chatInput {
+  pointer-events: auto;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  outline: none;
+}
+
+#chatInput:focus {
+  border-color: rgba(241, 196, 15, 0.8);
+  background: rgba(0, 0, 0, 0.75);
+}
+
+@media (max-width: 768px) {
+  #chatPanel { width: 200px; }
+  #chatLog { max-height: 90px; }
+}
+
 #deathBox h2 {
   color: #e74c3c;
   margin-bottom: 10px;
