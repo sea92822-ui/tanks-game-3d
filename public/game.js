@@ -338,15 +338,14 @@ function buildGround() {
   }
   geo.computeVertexNormals();
 
-  // Земля: базовая зелёная — видна всегда, сверху ложится контрастная трава grass-1024.jpg (1024x1024, POT)
+  // Земля: проверенная конфигурация (работала до апгрейда графики) — grass-6.jpg + повтор 240
   const mat = new THREE.MeshStandardMaterial({ color: 0x4a7a38, roughness: 1, metalness: 0 });
-  new THREE.TextureLoader().load('texture/grass-1024.jpg', (tex) => {
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(120, 120); // ~50 юнитов на тайл
-    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    mat.map = tex;
-    mat.needsUpdate = true;
-  }, undefined, (e) => { showFatalError('Ошибка загрузки текстуры земли: ' + e.message); });
+  const grassTex = new THREE.TextureLoader().load('texture/grass-6.jpg');
+  grassTex.wrapS = grassTex.wrapT = THREE.RepeatWrapping;
+  grassTex.repeat.set(240, 240);
+  grassTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  mat.map = grassTex;
+  mat.needsUpdate = true;
   const ground = new THREE.Mesh(geo, mat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(world.width / 2, 0, world.depth / 2);
