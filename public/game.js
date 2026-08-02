@@ -293,29 +293,42 @@ function makeValueNoise(size, cells) {
 }
 
 // Процедурная трава: несколько слоёв шума, проплешины и светлые пятна
-// (DataTexture — без canvas, работает везде)
+// Процедурная трава через CanvasTexture: пятна оттенков + штрихи травинок.
+// Без внешних файлов — не зависит от загрузки JPEG.
 function makeGrassTexture() {
   const size = 512;
-  const coarse = makeValueNoise(size, 6);
-  const fine = makeValueNoise(size, 24);
-  const blotch = makeValueNoise(size, 10);
-  const data = new Uint8Array(size * size * 4);
-  for (let i = 0; i < size * size; i++) {
-    const n = coarse[i] * 0.6 + fine[i] * 0.4;
-    const b = blotch[i];
-    let r = 52 + n * 44;
-    let g = 88 + n * 70;
-    let bl = 34 + n * 30;
-    if (b < 0.26) { r *= 0.72; g *= 0.7; bl *= 0.72; }          // тёмные проплешины
-    else if (b > 0.74) { r *= 1.18; g *= 1.14; bl *= 1.1; }      // светлые пятна
-    if (fine[i] < 0.18) { r *= 0.92; g *= 0.9; bl *= 0.94; }     // мелкие тёмные крапинки
-    if (fine[i] > 0.85) { r = r * 0.5 + 96; g = g * 0.5 + 72; bl = bl * 0.5 + 28; } // бурые травинки
-    const o = i * 4;
-    data[o] = r; data[o + 1] = g; data[o + 2] = bl; data[o + 3] = 255;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  const ctx = cv.getContext('2d');
+
+  ctx.fillStyle = '#3f7a33';
+  ctx.fillRect(0, 0, size, size);
+
+  const rnd = mulberry32(20260702);
+  for (let i = 0; i < 420; i++) {
+    const x = rnd() * size, y = rnd() * size, r = 18 + rnd() * 60;
+    const g = 56 + Math.floor(rnd() * 34);
+    ctx.fillStyle = 'rgba(' + Math.floor(g * 0.6) + ',' + g + ',' + Math.floor(g * 0.42) + ',' + (0.05 + rnd() * 0.12) + ')';
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
   }
-  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  for (let i = 0; i < 14000; i++) {
+    const x = rnd() * size, y = rnd() * size;
+    const l = 2 + rnd() * 4.5;
+    const v = 0.3 + rnd() * 0.5;
+    ctx.strokeStyle = 'rgba(' + Math.floor(70 * v) + ',' + Math.floor(150 * v) + ',' + Math.floor(42 * v) + ',' + (0.3 + rnd() * 0.5) + ')';
+    ctx.lineWidth = 0.8 + rnd();
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + (rnd() - 0.5) * 2.5, y - l);
+    ctx.stroke();
+  }
+
+  const tex = new THREE.CanvasTexture(cv);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.needsUpdate = true;
+  tex.repeat.set(48, 48);
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   return tex;
 }
 
@@ -335,14 +348,11 @@ function buildGround() {
   }
   geo.computeVertexNormals();
 
-  // Земля: проверенная конфигурация (работала до апгрейда графики) — grass-6.jpg + повтор 240
-  const mat = new THREE.MeshStandardMaterial({ color: 0x4a7a38, roughness: 1, metalness: 0 });
-  const grassTex = new THREE.TextureLoader().load('texture/grass-6.jpg');
-  grassTex.wrapS = grassTex.wrapT = THREE.RepeatWrapping;
-  grassTex.repeat.set(240, 240);
-  grassTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  mat.map = grassTex;
+  // Земля: насыщенный зелёный + процедурная CanvasTexture-трава (без внешних файлов)
+  const mat = new THREE.MeshStandardMaterial({ color: 0x4caf50, roughness: 1, metalness: 0 });
+  mat.map = makeGrassTexture();
   mat.needsUpdate = true;
+  console.log('[ground] texture ready, WebGL2 =', !!renderer.capabilities.isWebGL2);
   const ground = new THREE.Mesh(geo, mat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(world.width / 2, 0, world.depth / 2);
