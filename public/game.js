@@ -73,6 +73,9 @@ const sunLight = new THREE.DirectionalLight(0xfff4e0, 1.0);
 sunLight.position.set(300, 500, 200);
 sunLight.castShadow = true;
 sunLight.shadow.bias = -0.0005;
+sunLight.shadow.radius = 4; // мягкие края теней
+sunLight.shadow.camera.near = 50;
+sunLight.shadow.camera.far = 1500;
 sunLight.shadow.camera.left = -800;
 sunLight.shadow.camera.right = 800;
 sunLight.shadow.camera.top = 800;
@@ -81,10 +84,61 @@ sunLight.shadow.mapSize.set(2048, 2048);
 scene.add(sunLight);
 scene.add(sunLight.target); // тени следуют за игроком
 
+// ---------------------------------------------------------------------------
+// НЕБО: градиент от зенита к горизонту, следует за камерой
+// ---------------------------------------------------------------------------
+const skyDome = new THREE.Mesh(
+  new THREE.SphereGeometry(7000, 24, 12),
+  new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    fog: false,
+    uniforms: {
+      topColor: { value: new THREE.Color(0x2f6fd0) },
+      midColor: { value: new THREE.Color(0x7db9e8) },
+      botColor: { value: new THREE.Color(0xd8e8e0) },
+    },
+    vertexShader: `
+      varying vec3 vWorldPos;
+      void main() {
+        vWorldPos = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      varying vec3 vWorldPos;
+      uniform vec3 topColor;
+      uniform vec3 midColor;
+      uniform vec3 botColor;
+      void main() {
+        float h = normalize(vWorldPos).y;
+        vec3 col;
+        if (h > 0.0) col = mix(midColor, topColor, smoothstep(0.0, 0.6, h));
+        else col = mix(botColor, midColor, smoothstep(-0.12, 0.0, h));
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+  })
+);
+scene.add(skyDome);
+
+// Лёгкая атмосферная дымка скрывает край карты (цвет = горизонту)
+scene.fog = new THREE.Fog(0xd8e8e0, 2200, 5000);
+
 // Вспышка у дула (общий свет для всех выстрелов)
 const muzzleLight = new THREE.PointLight(0xffaa44, 0, 240);
 muzzleLight.position.set(0, 30, 0);
 scene.add(muzzleLight);
+
+// ---------------------------------------------------------------------------
+// ОТРАЖЕНИЯ: окружающая карта для блеска металла (не на «Низкой»)
+// ---------------------------------------------------------------------------
+function setupEnvironment() {
+  if (!THREE.PMREMGenerator || !THREE.RoomEnvironment || settingsState.quality === 'low') return;
+  try {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new THREE.RoomEnvironment(), 0.04).texture;
+  } catch (e) { /* ignore */ }
+}
+setupEnvironment();
 
 // ---------------------------------------------------------------------------
 // НАСТРОЙКИ ГРАФИКИ
@@ -192,13 +246,88 @@ let world = { width: 6000, depth: 6000 };
 let obstaclesData = [];
 let maxHp = 100;
 
+// Детерминированный шум для процедурной текстуры травы
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function makeValueNoise(size, cells) {
+  const rnd = mulberry32(1337);
+  const n = cells + 2;
+  const vals = new Float32Array(n * n);
+  for (let i = 0; i < vals.length; i++) vals[i] = rnd();
+  const out = new Float32Array(size * size);
+  const g = cells / size;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const fx = x * g, fy = y * g;
+      const x0 = Math.floor(fx), y0 = Math.floor(fy);
+      const tx = fx - x0, ty = fy - y0;
+      const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+      const i00 = vals[y0 * n + x0], i10 = vals[y0 * n + x0 + 1];
+      const i01 = vals[(y0 + 1) * n + x0], i11 = vals[(y0 + 1) * n + x0 + 1];
+      const a = i00 + (i10 - i00) * sx;
+      const b = i01 + (i11 - i01) * sx;
+      out[y * size + x] = a + (b - a) * sy;
+    }
+  }
+  return out;
+}
+
+// Процедурная трава: несколько слоёв шума, проплешины и светлые пятна
+function makeGrassTexture() {
+  const size = 512;
+  const coarse = makeValueNoise(size, 6);
+  const fine = makeValueNoise(size, 24);
+  const blotch = makeValueNoise(size, 10);
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(size, size);
+  const d = img.data;
+  for (let i = 0; i < size * size; i++) {
+    const n = coarse[i] * 0.6 + fine[i] * 0.4;
+    const b = blotch[i];
+    let r = 58 + n * 26;
+    let g = 96 + n * 46;
+    let bl = 38 + n * 18;
+    if (b < 0.28) { r *= 0.8; g *= 0.78; bl *= 0.8; }        // тёмные проплешины
+    else if (b > 0.75) { r *= 1.15; g *= 1.12; bl *= 1.08; } // светлые пятна
+    if (fine[i] > 0.82) { r = r * 0.55 + 90; g = g * 0.55 + 70; bl = bl * 0.55 + 30; } // бурые травинки
+    d[i * 4] = r; d[i * 4 + 1] = g; d[i * 4 + 2] = bl; d[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+// Высота ландшафта: пологие холмы (только визуально, физика остаётся 2D)
+function terrainHeight(x, z) {
+  return Math.sin(x * 0.0038) * Math.cos(z * 0.0035) * 1.2
+       + Math.sin(x * 0.011 + 1.7) * Math.cos(z * 0.009 + 0.5) * 0.8
+       + Math.sin((x + z) * 0.0055) * Math.cos((x - z) * 0.007 + 2.1) * 0.6;
+}
+
 function buildGround() {
-  const geo = new THREE.PlaneGeometry(world.width, world.depth);
-  const grassTex = new THREE.TextureLoader().load('texture/grass-6.jpg');
-  grassTex.wrapS = grassTex.wrapT = THREE.RepeatWrapping;
-  grassTex.repeat.set(240, 240);
+  const seg = settingsState.quality === 'low' ? 64 : 128;
+  const geo = new THREE.PlaneGeometry(world.width, world.depth, seg, seg);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    pos.setY(i, terrainHeight(pos.getX(i), pos.getZ(i)));
+  }
+  geo.computeVertexNormals();
+
+  const grassTex = makeGrassTexture();
+  grassTex.repeat.set(24, 24);
   grassTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  const mat = new THREE.MeshStandardMaterial({ map: grassTex });
+  const mat = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1, metalness: 0 });
   const ground = new THREE.Mesh(geo, mat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(world.width / 2, 0, world.depth / 2);
@@ -210,7 +339,7 @@ function buildGround() {
   wallTex.wrapS = wallTex.wrapT = THREE.RepeatWrapping;
   wallTex.repeat.set(15, 1);
   wallTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  const wallMat = new THREE.MeshStandardMaterial({ map: wallTex });
+  const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.8, metalness: 0.1 });
   const wallHeight = 50, wallThickness = 12;
   const walls = [
     { x: world.width / 2, z: 0, w: world.width, d: wallThickness },
@@ -321,17 +450,17 @@ function buildObstacles() {
 
     if (o.type === 'rock') {
       const r = Math.max(o.w, o.d) * 0.45;
-      mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), new THREE.MeshStandardMaterial({ color: 0x8a8a8a }));
+      mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), new THREE.MeshStandardMaterial({ color: 0x8a8a8a, roughness: 0.9, metalness: 0.08 }));
       mesh.position.set(o.x + o.w / 2, r * 0.7, o.z + o.d / 2);
       mesh.rotation.y = Math.random() * Math.PI;
       mesh.scale.y = 0.75;
     } else if (o.type === 'crate') {
-      mesh = new THREE.Mesh(new THREE.BoxGeometry(o.w, 16, o.d), new THREE.MeshStandardMaterial({ color: 0xa0522d }));
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(o.w, 16, o.d), new THREE.MeshStandardMaterial({ color: 0xa0522d, roughness: 0.85, metalness: 0.05 }));
       mesh.position.set(o.x + o.w / 2, 8, o.z + o.d / 2);
     } else if (o.type === 'tree') {
       mesh = createTreeMesh(o, i);
     } else {
-      mesh = new THREE.Mesh(new THREE.BoxGeometry(o.w, 40, o.d), new THREE.MeshStandardMaterial({ color: 0x6b6b6b }));
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(o.w, 40, o.d), new THREE.MeshStandardMaterial({ color: 0x6b6b6b, roughness: 0.9, metalness: 0.1 }));
       mesh.position.set(o.x + o.w / 2, 20, o.z + o.d / 2);
     }
 
@@ -1562,6 +1691,10 @@ function spawnExhaustPuff(p, delayMs, moving) {
       grow: moving ? 0.9 : 0.7,
       born: performance.now() + delayMs,
       life: 900 + Math.random() * 400,
+      ph: Math.random() * Math.PI * 2,
+      fr: 1.2 + Math.random() * 1.8,
+      am: 6 + Math.random() * 10,
+      startOpacity: 0.8,
     });
   }
 }
@@ -2027,23 +2160,27 @@ function spawnMuzzleSmoke(b) {
   const cx = shooter ? shooter.x : b.x;
   const cz = shooter ? shooter.z : b.z;
 
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < 14; i++) {
     const mat = new THREE.MeshBasicMaterial({ color: 0xc8c8c8, transparent: true });
     const mesh = new THREE.Mesh(particleGeo, mat);
-    mesh.scale.setScalar(5 + Math.random() * 5);
+    mesh.scale.setScalar(5 + Math.random() * 6);
     const ang = Math.random() * Math.PI * 2;
-    const r = 8 + Math.random() * 18;
+    const r = 8 + Math.random() * 20;
     mesh.position.set(cx + Math.cos(ang) * r, 8 + Math.random() * 14, cz + Math.sin(ang) * r);
     scene.add(mesh);
     particles.push({
       mesh,
-      vx: (Math.random() - 0.5) * 20,
-      vy: 25 + Math.random() * 25,
-      vz: (Math.random() - 0.5) * 20,
-      grav: 18, // дым лёгкий — поднимается вверх
+      vx: (Math.random() - 0.5) * 22,
+      vy: 28 + Math.random() * 26,
+      vz: (Math.random() - 0.5) * 22,
+      grav: 16, // дым лёгкий — поднимается вверх
       grow: 0.55,
       born: performance.now(),
-      life: 1500 + Math.random() * 800,
+      life: 1500 + Math.random() * 900,
+      ph: Math.random() * Math.PI * 2,
+      fr: 1.2 + Math.random() * 1.8,
+      am: 10 + Math.random() * 18,
+      startOpacity: 0.75,
     });
   }
 }
@@ -2170,6 +2307,11 @@ function spawnParticles(x, y, z, count, colors, speed, upBias, life, size, grow)
       grow: grow || 2,
       born: performance.now(),
       life,
+      // турбулентность: клубящаяся анимация дыма
+      ph: Math.random() * Math.PI * 2,
+      fr: 1.2 + Math.random() * 1.8,
+      am: 8 + Math.random() * 14,
+      startOpacity: 1,
     });
   }
 }
@@ -2202,7 +2344,15 @@ function updateParticles(dt, now) {
     p.mesh.position.y += p.vy * dt;
     p.mesh.position.z += p.vz * dt;
     const t = age / p.life;
-    p.mesh.material.opacity = 1 - t;
+    // клубящийся дым: турбулентность растёт со временем
+    if (p.ph !== undefined) {
+      const k = p.am * t * dt;
+      p.mesh.position.x += Math.sin(now * 0.004 * p.fr + p.ph) * k * 3;
+      p.mesh.position.z += Math.cos(now * 0.004 * p.fr + p.ph * 1.3) * k * 3;
+      p.mesh.position.y += Math.sin(now * 0.005 * p.fr + p.ph) * k * 1.2;
+    }
+    // мягкое затухание: сначала долго держится, в конце тает
+    p.mesh.material.opacity = (p.startOpacity || 1) * Math.pow(1 - t, 1.5);
     p.mesh.scale.multiplyScalar(1 + (p.grow || 2) * dt);
   }
 }
@@ -2726,6 +2876,7 @@ function animate() {
     updateFallingTrees(now);
     drawMinimap(now);
     updateCamera(players);
+    skyDome.position.copy(camera.position);
   }
 
   // Превью танка в меню: крутится, пока открыт экран ника
