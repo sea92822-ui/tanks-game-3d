@@ -542,37 +542,37 @@ function ensureTrampolines(trampolines) {
 // МОДЕЛИ ТАНКОВ (косметика, открываются уровнями)
 // ---------------------------------------------------------------------------
 const TANK_MODELS = [
-  { id: 'medium', name: 'Средний', level: 1 },
+  { id: 'medium', name: 'Тигр II', level: 1 },
   { id: 'light',  name: 'Лёгкий',  level: 2 },
-  { id: 'heavy',  name: 'Тяжёлый', level: 6 },
+  { id: 'heavy',  name: 'Т-90',    level: 6 },
 ];
 
 const TANK_MODEL_CFG = {
   medium: {
-    hullW: 28, hullH: 9, hullL: 40, hullY: 7.5,
-    upperW: 24, upperH: 4, upperL: 30, upperY: 13,
-    glacisW: 24, glacisH: 5, glacisL: 8, glacisRot: -0.45, glacisY: 12.8, glacisZ: 16.5,
-    rearW: 24, rearH: 4, rearL: 6, rearRot: 0.3, rearY: 13.2, rearZ: -16,
-    bandW: 7, bandH: 11.5, bandL: 47, bandY: 7, trackOff: 15,
-    wheelR: 4.2, wheelW: 7.6, wheelN: 5, bigR: 5.4, bigRearR: 4.8,
-    skirtW: 0.8, skirtH: 5.5, skirtL: 44, skirtX: 12.2, skirtY: 10,
-    fenderW: 5, fenderH: 1, fenderL: 44, fenderX: 13.5, fenderY: 12.9,
-    pipeX: 6, pipeY: 9, pipeZ: -20.5,
-    lampX: 8, lampY: 12.5, lampZ: 20.5,
-    hookX: 9, hookY: 4.5, hookZ: 20.8,
-    turretY: 17,
-    baseR1: 11, baseR2: 13, baseH: 8,
-    midR1: 9.5, midR2: 11, midH: 5, midY: 6.5,
-    domeR: 10.5, domeY: 10,
-    cupolaR1: 3.2, cupolaR2: 3.8, cupolaH: 3, cupolaY: 13.5, hatchY: 15.4,
-    mgX: 4, mgY: 14, mgZ: 4, mgR: 0.5, mgL: 5,
-    antX: -6, antY: 16, antZ: -4, antH: 13,
-    stowW: 7, stowH: 3.5, stowL: 5, stowY: 7.5, stowZ: -12,
-    barY: 1, barZ: 20,
-    tubeR1: 2.2, tubeR2: 2.6, tubeL: 26,
-    brakeR1: 3, brakeR2: 2.8, brakeH: 4.5, brakeZ: 14.5,
-    breechR1: 4.2, breechR2: 4.6, breechH: 4, breechZ: -10,
-    tipY: 35,
+    hullW: 30, hullH: 12, hullL: 44, hullY: 9,
+    upperW: 26, upperH: 5, upperL: 32, upperY: 16.5,
+    glacisW: 26, glacisH: 6, glacisL: 9, glacisRot: -0.42, glacisY: 16.4, glacisZ: 17.5,
+    rearW: 26, rearH: 5, rearL: 6.5, rearRot: 0.32, rearY: 16.8, rearZ: -15.8,
+    bandW: 9, bandH: 13, bandL: 50, bandY: 9, trackOff: 19,
+    wheelR: 4.4, wheelW: 8.5, wheelN: 8, bigR: 5.6, bigRearR: 5,
+    skirtW: 0.8, skirtH: 5, skirtL: 46, skirtX: 16.4, skirtY: 11.5,
+    fenderW: 5.5, fenderH: 1.1, fenderL: 46, fenderX: 17.4, fenderY: 16,
+    pipeX: 6, pipeY: 10, pipeZ: -21.5,
+    lampX: 9.5, lampY: 15.5, lampZ: 22.5,
+    hookX: 10.5, hookY: 5.5, hookZ: 22.8,
+    turretY: 21.5,
+    baseR1: 13, baseR2: 15, baseH: 8,
+    midR1: 11.5, midR2: 13, midH: 5.5, midY: 7,
+    domeR: 12.5, domeY: 12,
+    cupolaR1: 3.6, cupolaR2: 4.2, cupolaH: 3, cupolaY: 15.5, hatchY: 17.4,
+    mgX: 5, mgY: 16, mgZ: 5, mgR: 0.55, mgL: 5.5,
+    antX: -6.5, antY: 17.5, antZ: -4, antH: 14,
+    stowW: 9, stowH: 4.5, stowL: 7, stowY: 8, stowZ: -13,
+    barY: 1, barZ: 18,
+    tubeR1: 1.7, tubeR2: 2, tubeL: 25,
+    brakeR1: 3.6, brakeR2: 3.3, brakeH: 4.5, brakeZ: 14,
+    breechR1: 3.8, breechR2: 4.2, breechH: 3.8, breechZ: -9,
+    tipY: 38,
   },
   light: {
     hullW: 23, hullH: 8, hullL: 34, hullY: 6.5,
@@ -601,30 +601,40 @@ const TANK_MODEL_CFG = {
     tipY: 30,
   },
   heavy: {
-    hullW: 34, hullH: 11, hullL: 47, hullY: 8.5,
-    upperW: 29, upperH: 4.5, upperL: 36, upperY: 15.5,
-    glacisW: 29, glacisH: 6, glacisL: 9, glacisRot: -0.5, glacisY: 15.2, glacisZ: 19.5,
-    rearW: 29, rearH: 4.5, rearL: 7, rearRot: 0.32, rearY: 15.8, rearZ: -18.8,
-    bandW: 8.5, bandH: 14, bandL: 53, bandY: 8, trackOff: 18.5,
-    wheelR: 5, wheelW: 9, wheelN: 6, bigR: 6.4, bigRearR: 5.6,
-    skirtW: 1, skirtH: 6.5, skirtL: 50, skirtX: 14.8, skirtY: 11,
-    fenderW: 6, fenderH: 1.2, fenderL: 50, fenderX: 16.8, fenderY: 15.2,
-    pipeX: 7, pipeY: 10.5, pipeZ: -24.2,
-    lampX: 10, lampY: 14.8, lampZ: 24.2,
-    hookX: 11, hookY: 5, hookZ: 24.5,
-    turretY: 20,
-    baseR1: 13.5, baseR2: 15.5, baseH: 9.5,
-    midR1: 11.5, midR2: 13.5, midH: 6, midY: 7.8,
-    domeR: 12.5, domeY: 12.5,
-    cupolaR1: 4, cupolaR2: 4.6, cupolaH: 3.5, cupolaY: 16.5, hatchY: 18.5,
-    mgX: 5, mgY: 17, mgZ: 5, mgR: 0.6, mgL: 6,
-    antX: -7, antY: 19, antZ: -5, antH: 15,
-    stowW: 9, stowH: 4, stowL: 6, stowY: 9, stowZ: -14,
-    barY: 1.2, barZ: 24,
-    tubeR1: 2.9, tubeR2: 3.3, tubeL: 32,
-    brakeR1: 3.9, brakeR2: 3.6, brakeH: 5.5, brakeZ: 18,
-    breechR1: 5.4, breechR2: 5.9, breechH: 5, breechZ: -12,
+    hullW: 33, hullH: 9.5, hullL: 46, hullY: 7.5,
+    upperW: 29, upperH: 4, upperL: 34, upperY: 13.5,
+    glacisW: 29, glacisH: 5.5, glacisL: 9, glacisRot: -0.55, glacisY: 13.4, glacisZ: 18,
+    rearW: 29, rearH: 4, rearL: 6.5, rearRot: 0.3, rearY: 13.8, rearZ: -17.5,
+    bandW: 8.5, bandH: 13, bandL: 52, bandY: 7.5, trackOff: 18.5,
+    wheelR: 4.8, wheelW: 8.5, wheelN: 6, bigR: 6, bigRearR: 5.4,
+    skirtW: 1, skirtH: 6.5, skirtL: 48, skirtX: 14.8, skirtY: 10.5,
+    fenderW: 6, fenderH: 1.1, fenderL: 48, fenderX: 16.8, fenderY: 13.2,
+    pipeX: 7, pipeY: 9.5, pipeZ: -23.5,
+    lampX: 10, lampY: 13, lampZ: 23.5,
+    hookX: 11, hookY: 4.5, hookZ: 23.8,
+    turretY: 18.5,
+    baseR1: 13, baseR2: 14.5, baseH: 5,
+    midR1: 11.5, midR2: 13, midH: 3.5, midY: 4.2,
+    domeR: 12, domeY: 6.5,
+    cupolaR1: 3, cupolaR2: 3.6, cupolaH: 2.5, cupolaY: 9.5, hatchY: 11,
+    mgX: 4.5, mgY: 10.5, mgZ: 4, mgR: 0.5, mgL: 5,
+    antX: -6.5, antY: 12.5, antZ: -4, antH: 15,
+    stowW: 6, stowH: 3.5, stowL: 5, stowY: 5, stowZ: -9.5,
+    barY: 1, barZ: 22,
+    tubeR1: 1.8, tubeR2: 2.1, tubeL: 30,
+    brakeR1: 2.4, brakeR2: 2.3, brakeH: 3, brakeZ: 17,
+    breechR1: 4, breechR2: 4.4, breechH: 4, breechZ: -9,
     tipY: 42,
+    eraHull: [
+      { x: -8, y: 13.6, z: 17.2, w: 5.5, h: 4.5, d: 2.2 },
+      { x: 8, y: 13.6, z: 17.2, w: 5.5, h: 4.5, d: 2.2 },
+      { x: 0, y: 13.6, z: 17.2, w: 5, h: 4.5, d: 2.2 },
+    ],
+    eraTurret: [
+      { x: -6, y: 9, z: 10.5, w: 5, h: 3.4, d: 2.2 },
+      { x: 6, y: 9, z: 10.5, w: 5, h: 3.4, d: 2.2 },
+      { x: 0, y: 9, z: 11, w: 4.5, h: 3.4, d: 2.2 },
+    ],
   },
 };
 
@@ -782,6 +792,27 @@ function createTankMesh(color, modelId) {
   stowage.position.set(0, c.stowY, c.stowZ);
   stowage.castShadow = true;
   turretPivot.add(stowage);
+
+  // Блоки динамической защиты на лобовой плите корпуса
+  if (c.eraHull) {
+    c.eraHull.forEach(e => {
+      const block = new THREE.Mesh(new THREE.BoxGeometry(e.w, e.h, e.d), bodyMat);
+      block.rotation.x = c.glacisRot;
+      block.position.set(e.x, e.y, e.z);
+      block.castShadow = true;
+      group.add(block);
+    });
+  }
+
+  // Блоки динамической защиты на башне
+  if (c.eraTurret) {
+    c.eraTurret.forEach(e => {
+      const block = new THREE.Mesh(new THREE.BoxGeometry(e.w, e.h, e.d), bodyMat);
+      block.position.set(e.x, e.y, e.z);
+      block.castShadow = true;
+      turretPivot.add(block);
+    });
+  }
 
   // --- Дуло (группа: ствол + дульный тормоз + казённик) ---
   const barrel = new THREE.Group();
