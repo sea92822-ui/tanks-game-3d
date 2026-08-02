@@ -135,9 +135,6 @@ const skyDome = new THREE.Mesh(
 );
 scene.add(skyDome);
 
-// Лёгкая атмосферная дымка скрывает край карты (цвет = горизонту)
-scene.fog = new THREE.Fog(0xd8e8e0, 2200, 5000);
-
 // Вспышка у дула (общий свет для всех выстрелов)
 const muzzleLight = new THREE.PointLight(0xffaa44, 0, 240);
 muzzleLight.position.set(0, 30, 0);
