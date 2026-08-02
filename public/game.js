@@ -138,7 +138,6 @@ function setupEnvironment() {
     scene.environment = pmrem.fromScene(new THREE.RoomEnvironment(), 0.04).texture;
   } catch (e) { /* ignore */ }
 }
-setupEnvironment();
 
 // ---------------------------------------------------------------------------
 // НАСТРОЙКИ ГРАФИКИ
@@ -238,6 +237,7 @@ function initSettingsUI() {
 
 applyGraphicsSettings();
 initSettingsUI();
+setupEnvironment();
 
 // ---------------------------------------------------------------------------
 // МИР (заполняется после получения init от сервера)
