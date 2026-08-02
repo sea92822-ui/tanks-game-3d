@@ -9,5 +9,18 @@
   "dependencies": {
     "express": "^4.19.2",
     "socket.io": "^4.7.5"
-  }
+  },
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sea92822-ui/tanks-game-3d.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/sea92822-ui/tanks-game-3d/issues"
+  },
+  "homepage": "https://github.com/sea92822-ui/tanks-game-3d#readme"
 }

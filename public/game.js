@@ -344,7 +344,9 @@ function buildGround() {
   const geo = new THREE.PlaneGeometry(world.width, world.depth, seg, seg);
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
-    pos.setY(i, terrainHeight(pos.getX(i), pos.getZ(i)));
+    // ВАЖНО: у PlaneGeometry ось "вдоль плоскости" — Y, а высота — Z (после rotation.x=-PI/2 становится мировой Y).
+    // setY схлопывает плоскость в вырожденную ленту — земля не рендерится!
+    pos.setZ(i, terrainHeight(pos.getX(i), pos.getY(i)));
   }
   geo.computeVertexNormals();
 
