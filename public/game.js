@@ -205,9 +205,13 @@ function buildGround() {
   ground.receiveShadow = true;
   scene.add(ground);
 
-  // Стены-границы карты (невысокие, чтобы обозначить край)
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0xc0392b });
-  const wallHeight = 20, wallThickness = 6;
+  // Стены-границы карты: текстура из texture/images.jpg
+  const wallTex = new THREE.TextureLoader().load('texture/images.jpg');
+  wallTex.wrapS = wallTex.wrapT = THREE.RepeatWrapping;
+  wallTex.repeat.set(15, 1);
+  wallTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const wallMat = new THREE.MeshStandardMaterial({ map: wallTex });
+  const wallHeight = 50, wallThickness = 12;
   const walls = [
     { x: world.width / 2, z: 0, w: world.width, d: wallThickness },
     { x: world.width / 2, z: world.depth, w: world.width, d: wallThickness },
@@ -218,6 +222,7 @@ function buildGround() {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w.w, wallHeight, w.d), wallMat);
     mesh.position.set(w.x, wallHeight / 2, w.z);
     mesh.castShadow = true;
+    mesh.receiveShadow = true;
     scene.add(mesh);
   });
 }
