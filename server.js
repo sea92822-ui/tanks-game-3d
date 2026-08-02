@@ -32,7 +32,8 @@ const TANK_RADIUS = 20;
 const TANK_BASE_SPEED = 160;        // px(units)/сек вперёд-назад
 const TANK_TURN_SPEED = 2.6;        // рад/сек поворота корпуса
 const TURRET_TURN_SPEED = 12.0;      // рад/сек доворота башни к цели (сглаживание)
-const BULLET_SPEED = 520;
+const BULLET_SPEED = 2500;      // снаряд долетает до максимальной дальности (0.6с * скорость) 
+const BULLET_MAX_TIME = 0.6;    // секунд полёта: снаряд или попадает, или исчезает
 const BULLET_RADIUS = 5;
 const BULLET_BASE_DAMAGE = 34;
 const BASE_RELOAD_MS = 2000;
@@ -1031,6 +1032,7 @@ function fireBullet(p) {
       burn: buffActive(p, 'burn'),
       jam: buffActive(p, 'jam'),
       blast: buffActive(p, 'blast') || ammo === 'he',
+      until: Date.now() + BULLET_MAX_TIME * 1000, // снаряд живёт максимум 0.6 сек
     });
   }
 }
@@ -1038,51 +1040,74 @@ function fireBullet(p) {
 function updateBullets(dt, now) {
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i];
-    b.x += b.vx * dt;
-    b.z += b.vz * dt;
 
-    if (b.x < 0 || b.x > WORLD.width || b.z < 0 || b.z > WORLD.depth) {
-      bullets.splice(i, 1);
-      continue;
-    }
+    // На такой скорости снаряд за тик пролетает больше радиуса танка —
+    // двигаем подшагами, чтобы не «прошивать» цели насквозь
+    const totalDist = Math.hypot(b.vx, b.vz) * dt;
+    const steps = Math.max(1, Math.ceil(totalDist / 10));
+    const sx = b.vx * dt / steps;
+    const sz = b.vz * dt / steps;
 
-    const hitObstacle = OBSTACLES.some(o => (o.type === 'tree' && !o.standing) ? false : circleRectCollision(b.x, b.z, BULLET_RADIUS, o));
-    if (hitObstacle) {
-      if (b.ricochet > 0) {
-        // «Рикошет»: снаряд отскакивает от препятствия 1 раз
-        b.ricochet--;
-        b.x -= b.vx * dt;
-        b.z -= b.vz * dt;
-        b.vx = -b.vx;
-        b.vz = -b.vz;
+    let done = false;
+    for (let s = 0; s < steps && !done; s++) {
+      b.x += sx;
+      b.z += sz;
+
+      if (now >= b.until) {
+        // 0.6 сек истекли — снаряд просто исчезает
+        bullets.splice(i, 1);
+        done = true;
         continue;
       }
-      io.emit('bulletBlocked', { x: b.x, z: b.z, ownerId: b.ownerId });
-      bullets.splice(i, 1);
-      continue;
-    }
 
-    let hit = false;
-    for (const id in players) {
-      const p = players[id];
-      if (!p.alive || p.id === b.ownerId) continue;
+      if (b.x < 0 || b.x > WORLD.width || b.z < 0 || b.z > WORLD.depth) {
+        bullets.splice(i, 1);
+        done = true;
+        continue;
+      }
 
-      const dx = p.x - b.x, dz = p.z - b.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist < TANK_RADIUS + BULLET_RADIUS) {
-        if (b.pierce > 0 && b.hitIds.includes(p.id)) continue;
-        dealDamage(p, b.damage, b.ownerId, b.x, b.z, b, now);
-        if (b.pierce > 0 && p.hp > 0) {
-          // «Пробой»: снаряд летит дальше и не может дважды задеть эту цель
-          b.hitIds.push(p.id);
+      const hitObstacle = OBSTACLES.some(o => (o.type === 'tree' && !o.standing) ? false : circleRectCollision(b.x, b.z, BULLET_RADIUS, o));
+      if (hitObstacle) {
+        if (b.ricochet > 0) {
+          // «Рикошет»: снаряд отскакивает от препятствия 1 раз
+          b.ricochet--;
+          b.x -= sx;
+          b.z -= sz;
+          b.vx = -b.vx;
+          b.vz = -b.vz;
           continue;
         }
-        hit = true;
-        break;
+        io.emit('bulletBlocked', { x: b.x, z: b.z, ownerId: b.ownerId });
+        bullets.splice(i, 1);
+        done = true;
+        continue;
+      }
+
+      let hit = false;
+      for (const id in players) {
+        const p = players[id];
+        if (!p.alive || p.id === b.ownerId) continue;
+
+        const dx = p.x - b.x, dz = p.z - b.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < TANK_RADIUS + BULLET_RADIUS) {
+          if (b.pierce > 0 && b.hitIds.includes(p.id)) continue;
+          dealDamage(p, b.damage, b.ownerId, b.x, b.z, b, now);
+          if (b.pierce > 0 && p.hp > 0) {
+            // «Пробой»: снаряд летит дальше и не может дважды задеть эту цель
+            b.hitIds.push(p.id);
+            continue;
+          }
+          hit = true;
+          break;
+        }
+      }
+
+      if (hit) {
+        bullets.splice(i, 1);
+        done = true;
       }
     }
-
-    if (hit) bullets.splice(i, 1);
   }
 }
 
