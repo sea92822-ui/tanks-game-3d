@@ -5,7 +5,7 @@
   <link rel="icon" href="data:,"> <!-- отключает запрос favicon.ico (404 в консоли) -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Танчики 3D Online</title>
-  <link rel="stylesheet" href="style.css?v=6">
+  <link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 
@@ -131,7 +131,14 @@
           <button type="button" class="teamBtn teamAuto" data-team="">⚖️ Авто</button>
         </div>
       </div>
-      <label id="botsToggle" title="Боты займут свободные места в обеих командах"><input type="checkbox" id="botsCheckbox" checked> Играть с ботами (3×3)</label>
+      <label id="botsToggle" title="Боты займут свободные места в обеих командах"><input type="checkbox" id="botsCheckbox" checked> Играть с ботами</label>
+      <label id="countToggle">Размер боя
+        <select id="botsCountSelect">
+          <option value="3" selected>3×3 — обычная карта</option>
+          <option value="5">5×5 — карта в 2 раза больше</option>
+          <option value="8">8×8 — карта в 3 раза больше</option>
+        </select>
+      </label>
       <label id="diffToggle">Сложность ботов
         <select id="botDifficultySelect">
           <option value="easy">🟢 Лёгкий</option>
@@ -185,6 +192,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="vendor/GLTFLoader.js"></script>
   <script src="vendor/RoomEnvironment.js"></script>
-  <script src="game.js?v=22"></script>
+  <script src="game.js?v=23"></script>
 </body>
 </html>

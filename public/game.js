@@ -135,7 +135,15 @@ const skyDome = new THREE.Mesh(
 );
 scene.add(skyDome);
 
-// Лёгкая тёплая дымка: дальние объекты и край карты мягко растворяются (создаёт масштаб)
+// Лёгкая тёплая дымка: дальние объекты и край карты мягко растворяются (создаёт масштаб).
+// Дальность зависит от размера карты: на больших картах туман не скрывает середину поля боя
+function applyFogForWorld() {
+  const size = Math.max(world.width, world.depth);
+  scene.fog.near = size * 0.42;
+  scene.fog.far = size * 1.03;
+  camera.far = Math.max(9000, size * 1.5);
+  camera.updateProjectionMatrix();
+}
 scene.fog = new THREE.Fog(0xf2c9a0, 2500, 6200);
 
 // ---------------------------------------------------------------------------
@@ -464,6 +472,7 @@ function buildGround() {
   ground.position.set(world.width / 2, 0, world.depth / 2);
   ground.receiveShadow = true;
   scene.add(ground);
+  worldMeshes.push(ground);
 
   // Стены-границы карты: текстура из texture/images.jpg
   const wallTex = new THREE.TextureLoader().load('texture/images.jpg');
@@ -484,7 +493,9 @@ function buildGround() {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
+    worldMeshes.push(mesh);
   });
+  applyFogForWorld();
 }
 
 // ---------------------------------------------------------------------------
@@ -599,7 +610,43 @@ function buildObstacles() {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
+    worldMeshes.push(mesh);
   });
+}
+
+// Все меши мира (земля, стены, препятствия) — для перестройки при смене карты
+const worldMeshes = [];
+
+function clearWorld() {
+  worldMeshes.forEach(m => {
+    scene.remove(m);
+    if (m.geometry) m.geometry.dispose();
+    if (m.material) { if (m.material.map) m.material.map.dispose(); m.material.dispose(); }
+  });
+  worldMeshes.length = 0;
+  treeMeshes.forEach(t => scene.remove(t.group));
+  treeMeshes.clear();
+  fallingTrees.length = 0;
+  if (trampolineGroup) {
+    scene.remove(trampolineGroup);
+    trampolineGroup.traverse(c => { if (c.isMesh) { c.geometry.dispose?.(); c.material.dispose?.(); } });
+    trampolineGroup = null;
+  }
+  // снаряды, обломки и частицы старой карты
+  bulletMeshes.forEach(m => { scene.remove(m); });
+  bulletMeshes.clear();
+  wrecks.forEach(w => scene.remove(w.mesh));
+  wrecks.length = 0;
+  flyingBits.forEach(f => scene.remove(f.mesh));
+  flyingBits.length = 0;
+  particles.forEach(p => scene.remove(p.mesh));
+  particles.length = 0;
+  explosions.forEach(e => scene.remove(e.group));
+  explosions.length = 0;
+  lightFlashes.forEach(f => scene.remove(f.light));
+  lightFlashes.length = 0;
+  muzzleFlashes.forEach(f => scene.remove(f.mesh));
+  muzzleFlashes.length = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -982,6 +1029,7 @@ const chatInput = document.getElementById('chatInput');
 const chatLog = document.getElementById('chatLog');
 const botsCheckbox = document.getElementById('botsCheckbox');
 const botDifficultySelect = document.getElementById('botDifficultySelect');
+const botsCountSelect = document.getElementById('botsCountSelect');
 
 const TANK_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#ff6fa4',
   '#34495e', '#16a085', '#d35400', '#7f8c8d', '#8e44ad', '#ffffff'];
@@ -1151,6 +1199,9 @@ if (localStorage.getItem('tanksBots') === '0') botsCheckbox.checked = false;
 // Запоминаем сложность ботов
 const savedDiff = localStorage.getItem('tanksDifficulty');
 if (savedDiff === 'easy' || savedDiff === 'hard' || savedDiff === 'expert') botDifficultySelect.value = savedDiff;
+// Запоминаем размер боя
+const savedCount = Number(localStorage.getItem('tanksBotsCount'));
+if (savedCount === 5 || savedCount === 8) botsCountSelect.value = String(savedCount);
 
 function startGame() {
   const nickname = nicknameInput.value.trim();
@@ -1158,6 +1209,7 @@ function startGame() {
   nicknameOverlay.classList.add('hidden');
   localStorage.setItem('tanksBots', botsCheckbox.checked ? '1' : '0');
   localStorage.setItem('tanksDifficulty', botDifficultySelect.value);
+  localStorage.setItem('tanksBotsCount', botsCountSelect.value);
   connectToServer(nickname, selectedColor);
 }
 
@@ -1168,7 +1220,7 @@ function connectToServer(nickname, color) {
   socket = io({ transports: ['websocket', 'polling'] }); // WebSocket — низкая задержка
 
   socket.on('connect', () => {
-    socket.emit('join', { nickname, color, model: selectedModel, team: selectedTeam, withBots: botsCheckbox.checked, botDifficulty: botDifficultySelect.value });
+    socket.emit('join', { nickname, color, model: selectedModel, team: selectedTeam, withBots: botsCheckbox.checked, botDifficulty: botDifficultySelect.value, botsCount: Number(botsCountSelect.value) });
   });
 
   socket.on('init', (data) => {
@@ -1179,6 +1231,16 @@ function connectToServer(nickname, color) {
     myTeam = data.team;
     buildGround();
     buildObstacles();
+  });
+
+  // Смена размера боя: сервер пересобрал карту — перестраиваем мир на месте
+  socket.on('worldReset', (data) => {
+    world = data.world;
+    obstaclesData = data.obstacles;
+    clearWorld();
+    buildGround();
+    buildObstacles();
+    applyFogForWorld();
   });
 
   socket.on('matchEnd', (data) => {

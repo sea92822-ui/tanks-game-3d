@@ -726,11 +726,27 @@ html, body {
   accent-color: #2ecc71;
 }
 
-#diffToggle {
+#diffToggle, #countToggle {
   display: block;
   margin: 0 auto 16px;
   color: #cfe3ff;
   font-size: 13px;
+}
+
+#botsCountSelect {
+  margin-left: 8px;
+  padding: 4px 8px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid #555;
+  background: #111;
+  color: #fff;
+  outline: none;
+  cursor: pointer;
+}
+
+#botsCountSelect:focus {
+  border-color: #f1c40f;
 }
 
 #botDifficultySelect {

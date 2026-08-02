@@ -26,7 +26,11 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // ---------------------------------------------------------------------------
 // НАСТРОЙКИ ИГРЫ
 // ---------------------------------------------------------------------------
-const WORLD = { width: 6000, depth: 6000 }; // размеры карты по X и Z
+// Размер боя: ботов с каждой стороны -> размер карты
+const BOTS_COUNT_OPTIONS = [3, 5, 8];
+const WORLD_SIZES = { 3: 6000, 5: 12000, 8: 18000 };
+let WORLD = { width: 6000, depth: 6000 }; // размеры карты по X и Z
+let botsPerTeam = 3;                      // боты с каждой стороны
 const TICK_RATE = 60;
 const TANK_RADIUS = 20;
 const TANK_BASE_SPEED = 160;        // px(units)/сек вперёд-назад
@@ -41,7 +45,57 @@ const RESPAWN_DELAY_MS = 3500;
 const SPAWN_PROTECT_MS = 3000;
 const MAX_HP = 100;
 const KILLS_FOR_ROULETTE = 3;
-const OBSTACLES = generateObstacles();
+let OBSTACLES = [];
+let TRAMPOLINES = [];
+let PICKUP_POSITIONS = [];
+let SPAWN_ZONES = [];
+
+// Пересобрать мир под новый размер карты: препятствия, батуты, бонусы, спавны
+function resetWorld(size) {
+  WORLD = { width: size, depth: size };
+  OBSTACLES = generateObstacles();
+  TRAMPOLINES = generateTrampolines();
+  PICKUP_POSITIONS = generatePickupPositions();
+  SPAWN_ZONES = [
+    { x: 300, z: 300 },                            // северо-запад — красные
+    { x: WORLD.width - 300, z: WORLD.depth - 300 }, // юго-восток — синие
+  ];
+
+  bullets.length = 0;
+  artilleryStrikes.length = 0;
+
+  // Бонусы на новую карту
+  pickups.length = 0;
+  for (let i = 0; i < PICKUP_COUNT; i++) {
+    const p = getPickupSpot(i);
+    pickups.push({ id: i, type: PICKUP_TYPES[i % PICKUP_TYPES.length].type, x: p.x, z: p.z, active: true, respawnAt: 0 });
+  }
+
+  // Всех (людей и ботов) переспавниваем на новые базы
+  const now = Date.now();
+  for (const id in players) {
+    const pl = players[id];
+    const spawn = getSafeSpawnPoint(pl.team);
+    pl.x = spawn.x;
+    pl.z = spawn.z;
+    pl.y = 0;
+    pl.vy = 0;
+    pl.hp = pl.maxHp;
+    pl.alive = true;
+    pl.respawnAt = 0;
+    pl.spawnProtectUntil = now + SPAWN_PROTECT_MS;
+    pl.buffs = {};
+    pl.flags = {};
+    pl.rageKills = 0;
+    pl.damageMult = 1;
+    pl.jamUntil = 0;
+    pl.killsSinceUpgrade = 0;
+  }
+
+  teamScore = [0, 0];
+  matchWinner = null;
+  if (typeof io !== 'undefined') io.emit('matchReset', { score: teamScore });
+}
 
 // ---------------------------------------------------------------------------
 // КОМАНДНЫЙ РЕЖИМ (Team Deathmatch): красные (0) против синих (1)
@@ -50,7 +104,6 @@ const TEAM_NAMES = ['Красные', 'Синие'];
 const TEAM_COLORS = ['#e74c3c', '#3498db'];   // цвет команды (маркеры, баннеры)
 const KILLS_TO_WIN = 10;                      // первый до 10 фрагов — победа
 const MATCH_RESET_MS = 6000;                  // пауза между матчами
-const BOTS_PER_TEAM = 3;                      // боты с каждой стороны
 const BOTS_FORCED_OFF = process.env.BOTS === '0'; // env BOTS=0 — сервер без ботов
 let botsEnabled = !BOTS_FORCED_OFF;           // отключаются, если все игроки выбрали «без ботов»
 let teamScore = [0, 0];
@@ -138,14 +191,12 @@ const PICKUP_TYPES = [
 ];
 const PICKUP_COUNT = 14;
 const PICKUP_RESPAWN_MS = 10000;
-const PICKUP_POSITIONS = generatePickupPositions();
 
 // Батуты: 4 штуки на карте, подкидывают танк вверх
 const TRAMPOLINE_RADIUS = 34;
 const TRAMPOLINE_BOUNCE = 150;   // начальная вертикальная скорость при подбросе
 const TRAMPOLINE_GRAVITY = 380;  // гравитация при прыжке
 const TRAMPOLINE_COOLDOWN_MS = 1200;
-const TRAMPOLINES = generateTrampolines();
 
 function generateTrampolines() {
   const positions = [];
@@ -281,10 +332,9 @@ let bulletIdCounter = 1;
 
 // Бонусы на карте
 const pickups = [];
-for (let i = 0; i < PICKUP_COUNT; i++) {
-  const p = getPickupSpot(i);
-  pickups.push({ id: i, type: PICKUP_TYPES[i % PICKUP_TYPES.length].type, x: p.x, z: p.z, active: true, respawnAt: 0 });
-}
+
+// Стартовый мир: обычная карта 6000x6000, бонусы разложит resetWorld
+resetWorld(6000);
 
 const TANK_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#ff6fa4',
   '#34495e', '#16a085', '#d35400', '#7f8c8d', '#8e44ad', '#ffffff'];
@@ -310,10 +360,7 @@ function circleRectCollision(cx, cz, r, rect) {
 }
 
 // Два конца карты: северо-запад и юго-восток, танки спавнятся по командам
-const SPAWN_ZONES = [
-  { x: 300, z: 300 },                            // северо-запад — красные
-  { x: WORLD.width - 300, z: WORLD.depth - 300 }, // юго-восток — синие
-];
+// (SPAWN_ZONES пересоздаётся в resetWorld при смене размера карты)
 
 function getSafeSpawnPoint(side) {
   const zone = SPAWN_ZONES[side];
@@ -399,6 +446,7 @@ function createBot(team) {
   const name = BOT_NAMES[team][Math.floor(Math.random() * BOT_NAMES[team].length)] + '-' + n;
   const bot = createPlayer('bot-' + n, name, TEAM_COLORS[team], TANK_MODELS[Math.floor(Math.random() * TANK_MODELS.length)], team);
   bot.bot = true;
+  bot.botsCount = botsPerTeam; // боты живут при текущем размере боя
   bot.model = TANK_MODELS[Math.floor(Math.random() * TANK_MODELS.length)]; // разные танки у ботов
   bot.color = TEAM_COLORS[team];
   bot.botCfg = BOT_DIFFICULTIES[botsDifficulty] || BOT_DIFFICULTIES.hard;
@@ -421,7 +469,7 @@ function createBot(team) {
 
 function spawnBots() {
   for (let team = 0; team < 2; team++) {
-    for (let i = 0; i < BOTS_PER_TEAM; i++) createBot(team);
+    for (let i = 0; i < botsPerTeam; i++) createBot(team);
   }
 }
 
@@ -463,20 +511,59 @@ function applyBotDifficulty() {
   console.log(`Сложность ботов: ${d}`);
 }
 
+// Размер боя = максимум выбранного живыми игроками (3 / 5 / 8 ботов с каждой стороны)
+function currentBotsCount() {
+  let best = 3;
+  for (const id in players) {
+    const p = players[id];
+    if (p.bot) continue;
+    const n = BOTS_COUNT_OPTIONS.includes(p.botsCount) ? p.botsCount : 3;
+    if (n > best) best = n;
+  }
+  return best;
+}
+
+// Сменить размер боя и карту, если кто-то выбрал другой формат
+function applyBotsCount() {
+  const n = currentBotsCount();
+  const size = WORLD_SIZES[n] || 6000;
+  if (botsPerTeam === n && size === WORLD.width) return;
+  const from = `${botsPerTeam}x${botsPerTeam} (${WORLD.width})`;
+  botsPerTeam = n;
+  resetWorld(size);
+  syncBots();
+  console.log(`Размер боя: ${botsPerTeam}x${botsPerTeam}, карта ${WORLD.width}x${WORLD.depth} (было ${from})`);
+  io.emit('worldReset', { world: WORLD, obstacles: OBSTACLES });
+}
+
+// Боты есть, только пока хотя бы один живой игрок хочет их видеть.
+// Количество ботов доводится до botsPerTeam с каждой стороны (3/5/8)
 function syncBots() {
   if (BOTS_FORCED_OFF) return;
   const want = anyHumanWantsBots();
-  if (!want && botsEnabled) {
-    botsEnabled = false;
-    for (const id in players) {
-      if (players[id].bot) delete players[id];
+  if (!want) {
+    if (botsEnabled) {
+      botsEnabled = false;
+      for (const id in players) {
+        if (players[id].bot) delete players[id];
+      }
+      console.log('Боты покинули бой: все игроки выбрали игру без ботов');
     }
-    console.log('Боты покинули бой: все игроки выбрали игру без ботов');
-  } else if (want && !botsEnabled) {
-    botsEnabled = true;
-    spawnBots();
-    console.log('Боты вышли в бой: игрок запросил игру с ботами');
+    return;
   }
+  const first = !botsEnabled;
+  botsEnabled = true;
+  for (let team = 0; team < 2; team++) {
+    const teamBots = Object.values(players).filter(p => p.bot && p.team === team);
+    if (teamBots.length > botsPerTeam) {
+      // лишние боты (карта уменьшилась) — покидают бой
+      for (let i = 0; i < teamBots.length - botsPerTeam; i++) delete players[teamBots[i].id];
+    } else if (teamBots.length < botsPerTeam) {
+      // не хватает ботов (больше ботов или свежий сервер) — вызываем
+      for (let i = teamBots.length; i < botsPerTeam; i++) createBot(team);
+    }
+  }
+  if (first) console.log('Боты вышли в бой: игрок запросил игру с ботами');
 }
 
 // Рассылка только живым людям (у ботов нет сокета)
@@ -496,9 +583,11 @@ io.on('connection', (socket) => {
     const player = createPlayer(socket.id, nickname, color, data && data.model, team);
     if (data && typeof data.withBots === 'boolean') player.withBots = data.withBots;
     if (data && BOT_DIFFICULTIES[data.botDifficulty]) player.botDifficulty = data.botDifficulty;
+    if (data && BOTS_COUNT_OPTIONS.includes(Number(data.botsCount))) player.botsCount = Number(data.botsCount);
     players[socket.id] = player;
     syncBots();
     applyBotDifficulty();
+    applyBotsCount();
 
     socket.emit('init', {
       selfId: socket.id,
@@ -555,6 +644,7 @@ io.on('connection', (socket) => {
     delete players[socket.id];
     syncBots();
     applyBotDifficulty();
+    applyBotsCount();
   });
 });
 
@@ -1397,7 +1487,7 @@ setInterval(tick, 1000 / TICK_RATE);
 
 // Боты выходят в бой при старте сервера
 if (botsEnabled) spawnBots(); // при BOTS=0 сервер стартует без ботов
-console.log(`Командный режим: боты ${botsEnabled ? BOTS_PER_TEAM + 'x' + BOTS_PER_TEAM : 'выключены'}, победа до ${KILLS_TO_WIN} фрагов`);
+console.log(`Командный режим: боты ${botsPerTeam + 'x' + botsPerTeam} (карта ${WORLD.width}x${WORLD.depth}), победа до ${KILLS_TO_WIN} фрагов`);
 
 // ---------------------------------------------------------------------------
 // ЗАПУСК
