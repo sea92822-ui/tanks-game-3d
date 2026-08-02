@@ -281,30 +281,29 @@ function makeValueNoise(size, cells) {
 }
 
 // Процедурная трава: несколько слоёв шума, проплешины и светлые пятна
+// (DataTexture — без canvas, работает везде)
 function makeGrassTexture() {
   const size = 512;
   const coarse = makeValueNoise(size, 6);
   const fine = makeValueNoise(size, 24);
   const blotch = makeValueNoise(size, 10);
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  const img = ctx.createImageData(size, size);
-  const d = img.data;
+  const data = new Uint8Array(size * size * 4);
   for (let i = 0; i < size * size; i++) {
     const n = coarse[i] * 0.6 + fine[i] * 0.4;
     const b = blotch[i];
-    let r = 58 + n * 26;
-    let g = 96 + n * 46;
-    let bl = 38 + n * 18;
-    if (b < 0.28) { r *= 0.8; g *= 0.78; bl *= 0.8; }        // тёмные проплешины
-    else if (b > 0.75) { r *= 1.15; g *= 1.12; bl *= 1.08; } // светлые пятна
-    if (fine[i] > 0.82) { r = r * 0.55 + 90; g = g * 0.55 + 70; bl = bl * 0.55 + 30; } // бурые травинки
-    d[i * 4] = r; d[i * 4 + 1] = g; d[i * 4 + 2] = bl; d[i * 4 + 3] = 255;
+    let r = 52 + n * 44;
+    let g = 88 + n * 70;
+    let bl = 34 + n * 30;
+    if (b < 0.26) { r *= 0.72; g *= 0.7; bl *= 0.72; }          // тёмные проплешины
+    else if (b > 0.74) { r *= 1.18; g *= 1.14; bl *= 1.1; }      // светлые пятна
+    if (fine[i] < 0.18) { r *= 0.92; g *= 0.9; bl *= 0.94; }     // мелкие тёмные крапинки
+    if (fine[i] > 0.85) { r = r * 0.5 + 96; g = g * 0.5 + 72; bl = bl * 0.5 + 28; } // бурые травинки
+    const o = i * 4;
+    data[o] = r; data[o + 1] = g; data[o + 2] = bl; data[o + 3] = 255;
   }
-  ctx.putImageData(img, 0, 0);
-  const tex = new THREE.CanvasTexture(canvas);
+  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.needsUpdate = true;
   return tex;
 }
 
