@@ -411,6 +411,8 @@ function createBot(team) {
   const cr = bot.botCfg.combatRange;
   bot.botCombatRange = cr[0] + Math.random() * (cr[1] - cr[0]); // предпочитаемая дистанция боя
   bot.botWanderAngle = Math.random() * Math.PI * 2; // направление без цели
+  bot.botPatrol = null;            // точка патруля по карте: { x, z, until }
+  bot.botRepositionUntil = Date.now() + 4000 + Math.random() * 6000; // когда сменить позицию
   bot.botStuckUntil = 0;     // если застрял — поворачиваем жёстче
   bot.input.ammo = 'ap';
   players['bot-' + n] = bot;
@@ -741,6 +743,19 @@ function solidProbe(x, z) {
   return false;
 }
 
+// Точка для патруля бота по всей карте: случайное место (иногда — активный бонус)
+function pickBotPatrolPoint() {
+  const m = 400;
+  if (Math.random() < 0.35) {
+    const active = pickups.filter(pk => pk.active);
+    if (active.length) {
+      const pk = active[Math.floor(Math.random() * active.length)];
+      return { x: pk.x, z: pk.z };
+    }
+  }
+  return { x: m + Math.random() * (WORLD.width - m * 2), z: m + Math.random() * (WORLD.depth - m * 2) };
+}
+
 function updateBot(bot, dt, now) {
   const input = bot.input;
   const cfg = bot.botCfg || BOT_DIFFICULTIES.hard;
@@ -756,14 +771,17 @@ function updateBot(bot, dt, now) {
   }
 
   if (!target) {
-    // Врагов нет — блуждаем по карте
-    input.forward = true;
-    input.back = false;
+    // Врагов нет — патрулируем карту: едем к своей точке, дойдя или устав — к новой
     input.shooting = false;
-    const diff = angleDiff(bot.botWanderAngle, bot.chassisAngle);
-    input.left = diff > 0.08;
-    input.right = diff < -0.08;
-    if (Math.abs(diff) < 0.1) bot.botWanderAngle = Math.random() * Math.PI * 2;
+    if (!bot.botPatrol || now > bot.botPatrol.until) {
+      bot.botPatrol = { ...pickBotPatrolPoint(), until: now + 20000 };
+    }
+    const pat = bot.botPatrol;
+    const pd = angleDiff(Math.atan2(pat.x - bot.x, pat.z - bot.z), bot.chassisAngle);
+    input.forward = Math.abs(pd) < 1.1;
+    input.back = false;
+    input.left = pd > 0.1;
+    input.right = pd < -0.1;
     return;
   }
 
@@ -787,10 +805,26 @@ function updateBot(bot, dt, now) {
     }
   }
 
-  // ---- Движение: сближение / обход вокруг на своей дистанции ----
+  // Периодически бот меняет позицию: уходит в другую часть карты (даже в бою),
+  // особенно если врага не видно — вместо стояния на месте объезжает с фланга
+  if (now >= bot.botRepositionUntil) {
+    bot.botRepositionUntil = now + 10000 + Math.random() * 14000;
+    if (!canShoot || Math.random() < 0.3) {
+      bot.botPatrol = { ...pickBotPatrolPoint(), until: now + 9000 };
+    }
+  }
+
+  // ---- Движение: патруль / сближение / обход вокруг на своей дистанции ----
   let moveAngle;
   const steerActive = now < bot.botSteerUntil;
-  if (steerActive) {
+  if (bot.botPatrol && now < bot.botPatrol.until) {
+    // Репозиция или патруль: едем к точке в другой части карты
+    moveAngle = Math.atan2(bot.botPatrol.x - bot.x, bot.botPatrol.z - bot.z);
+    if (Math.hypot(bot.botPatrol.x - bot.x, bot.botPatrol.z - bot.z) < 150) {
+      bot.botPatrol = null;
+      bot.botRepositionUntil = now + 4000 + Math.random() * 8000;
+    }
+  } else if (steerActive) {
     // Объезд препятствия: едем вбок, пока не выйдем на свободное место
     moveAngle = bot.chassisAngle + Math.PI / 2 * (bot.botSteerDir || 1);
   } else if (best > bot.botCombatRange + 80) {
