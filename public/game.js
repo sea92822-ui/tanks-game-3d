@@ -324,10 +324,15 @@ function buildGround() {
   }
   geo.computeVertexNormals();
 
-  const grassTex = makeGrassTexture();
-  grassTex.repeat.set(24, 24);
-  grassTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  const mat = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1, metalness: 0 });
+  const mat = new THREE.MeshStandardMaterial({ map: makeGrassTexture(), roughness: 1, metalness: 0 });
+  // Земля — картинка images-2.jpg; если не загрузится, останется процедурная трава
+  new THREE.TextureLoader().load('texture/images-2.jpg', (tex) => {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(120, 120); // ~50 юнитов на тайл
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    mat.map = tex;
+    mat.needsUpdate = true;
+  });
   const ground = new THREE.Mesh(geo, mat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(world.width / 2, 0, world.depth / 2);
