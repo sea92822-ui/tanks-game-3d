@@ -5,6 +5,20 @@
 // мышь напрямую вращает башню через Pointer Lock API.
 // ============================================================================
 
+// Ошибки JavaScript показываются на экране (для отладки)
+function showFatalError(msg) {
+  let el = document.getElementById('fatalError');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'fatalError';
+    el.style.cssText = 'position:fixed;top:8px;left:8px;right:8px;z-index:9999;background:rgba(140,10,10,0.93);color:#fff;font:12px/1.5 monospace;padding:10px;border-radius:6px;white-space:pre-wrap;pointer-events:none;';
+    document.body.appendChild(el);
+  }
+  el.textContent += msg + '\n';
+}
+window.addEventListener('error', (e) => showFatalError(e.message + ' @ ' + String(e.filename || '').split('/').pop() + ':' + e.lineno));
+window.addEventListener('unhandledrejection', (e) => showFatalError('Promise: ' + ((e.reason && e.reason.message) || e.reason)));
+
 // ---------------------------------------------------------------------------
 // СЦЕНА, КАМЕРА, РЕНДЕРЕР
 // ---------------------------------------------------------------------------
@@ -324,8 +338,8 @@ function buildGround() {
   }
   geo.computeVertexNormals();
 
-  const mat = new THREE.MeshStandardMaterial({ map: makeGrassTexture(), roughness: 1, metalness: 0 });
-  // Земля — картинка images-2.jpg; если не загрузится, останется процедурная трава
+  // Земля: базовая зелёная — видна всегда, сверху ложится картинка images-2.jpg (512x512, POT)
+  const mat = new THREE.MeshStandardMaterial({ color: 0x4a7a38, roughness: 1, metalness: 0 });
   new THREE.TextureLoader().load('texture/images-2.jpg', (tex) => {
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(120, 120); // ~50 юнитов на тайл
