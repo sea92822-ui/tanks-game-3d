@@ -249,10 +249,20 @@ function circleRectCollision(cx, cz, r, rect) {
   return (dx * dx + dz * dz) < r * r;
 }
 
-function getSafeSpawnPoint() {
+// Два конца карты: северо-запад и юго-восток, танки спавнятся по командам
+const SPAWN_ZONES = [
+  { x: 300, z: 300 },                            // северо-запад
+  { x: WORLD.width - 300, z: WORLD.depth - 300 }, // юго-восток
+];
+let nextSpawnSide = 0; // 0 / 1 чередуются
+
+function getSafeSpawnPoint(side) {
+  const zone = SPAWN_ZONES[side];
   for (let attempt = 0; attempt < 50; attempt++) {
-    const x = TANK_RADIUS + Math.random() * (WORLD.width - TANK_RADIUS * 2);
-    const z = TANK_RADIUS + Math.random() * (WORLD.depth - TANK_RADIUS * 2);
+    const x = zone.x + (Math.random() - 0.5) * 500;
+    const z = zone.z + (Math.random() - 0.5) * 500;
+
+    if (x < TANK_RADIUS || x > WORLD.width - TANK_RADIUS || z < TANK_RADIUS || z > WORLD.depth - TANK_RADIUS) continue;
 
     const hitsObstacle = OBSTACLES.some(o => circleRectCollision(x, z, TANK_RADIUS + 10, o));
     if (hitsObstacle) continue;
@@ -265,13 +275,16 @@ function getSafeSpawnPoint() {
 
     return { x, z };
   }
-  return { x: WORLD.width / 2, z: WORLD.depth / 2 };
+  return { x: zone.x, z: zone.z };
 }
 
 function createPlayer(id, nickname, color, model) {
-  const spawn = getSafeSpawnPoint();
+  const side = nextSpawnSide;
+  nextSpawnSide = 1 - nextSpawnSide;
+  const spawn = getSafeSpawnPoint(side);
   return {
     id,
+    side,
     nickname: nickname && nickname.trim() ? nickname.trim().slice(0, 16) : randomNickname(),
     x: spawn.x,
     z: spawn.z,
@@ -374,7 +387,7 @@ function tick() {
 
     if (!p.alive) {
       if (now >= p.respawnAt) {
-        const spawn = getSafeSpawnPoint();
+        const spawn = getSafeSpawnPoint(p.side);
         p.x = spawn.x;
         p.z = spawn.z;
         p.hp = p.maxHp;

@@ -936,6 +936,122 @@ window.addEventListener('mouseup', (e) => {
 window.addEventListener('contextmenu', (e) => e.preventDefault()); // отключаем контекстное меню ПКМ
 
 // ---------------------------------------------------------------------------
+// РАДАР: видны только танки, замеченные в обзор
+// (конус обзора по башне + линия видимости + удержание метки)
+// ---------------------------------------------------------------------------
+const radar = document.getElementById('radar');
+const radarCtx = radar.getContext('2d');
+const RADAR_SIZE = 220;      // размер канваса в px
+const RADAR_RADIUS = 105;    // радиус круга в px
+const RADAR_RANGE = 800;     // дальность радара в юнитах мира
+const SPOT_CONE = Math.PI / 4; // половинный угол конуса обзора (45°)
+const SPOT_HOLD_MS = 5000;   // метка висит 5 сек после потери из виду
+const spottedTanks = new Map(); // id -> lastSeen (performance.now())
+let lastRadarDraw = 0;
+
+// Есть ли препятствие между точками (упавшие деревья не мешают)
+function isObstacleBetween(x0, z0, x1, z1) {
+  const dx = x1 - x0, dz = z1 - z0;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  const steps = Math.max(1, Math.floor(dist / 40));
+  for (let s = 1; s < steps; s++) {
+    const t = s / steps;
+    const px = x0 + dx * t, pz = z0 + dz * t;
+    for (let i = 0; i < obstaclesData.length; i++) {
+      const o = obstaclesData[i];
+      if (o.type === 'tree') {
+        const tm = treeMeshes.get(i);
+        if (!tm || tm.fallen) continue; // упавшее дерево не скрывает
+      }
+      if (px >= o.x && px <= o.x + o.w && pz >= o.z && pz <= o.z + o.d) return true;
+    }
+  }
+  return false;
+}
+
+function updateSpotting(players, now) {
+  const me = players.find(p => p.id === selfId);
+  if (!me || !me.alive) return;
+  players.forEach(p => {
+    if (p.id === selfId || !p.alive) return;
+    const dx = p.x - me.x, dz = p.z - me.z;
+    if (Math.sqrt(dx * dx + dz * dz) > RADAR_RANGE) return;
+
+    // танк внутри конуса обзора башни
+    let diff = Math.abs(Math.atan2(dx, dz) - me.turretAngle);
+    while (diff > Math.PI) diff = Math.abs(diff - Math.PI * 2);
+    if (diff > SPOT_CONE) return;
+
+    if (isObstacleBetween(me.x, me.z, p.x, p.z)) return;
+
+    spottedTanks.set(p.id, now);
+  });
+}
+
+function drawRadar(now) {
+  if (now - lastRadarDraw < 50) return; // ~20 кадров/сек
+  lastRadarDraw = now;
+
+  const cx = RADAR_SIZE / 2, cy = RADAR_SIZE / 2;
+  radarCtx.clearRect(0, 0, RADAR_SIZE, RADAR_SIZE);
+
+  // фон и кольца
+  radarCtx.fillStyle = 'rgba(8, 20, 10, 0.75)';
+  radarCtx.beginPath();
+  radarCtx.arc(cx, cy, RADAR_RADIUS, 0, Math.PI * 2);
+  radarCtx.fill();
+
+  radarCtx.strokeStyle = 'rgba(120, 255, 160, 0.25)';
+  radarCtx.lineWidth = 1;
+  [0.33, 0.66, 1].forEach(f => {
+    radarCtx.beginPath();
+    radarCtx.arc(cx, cy, RADAR_RADIUS * f, 0, Math.PI * 2);
+    radarCtx.stroke();
+  });
+  radarCtx.beginPath();
+  radarCtx.moveTo(cx - RADAR_RADIUS, cy);
+  radarCtx.lineTo(cx + RADAR_RADIUS, cy);
+  radarCtx.moveTo(cx, cy - RADAR_RADIUS);
+  radarCtx.lineTo(cx, cy + RADAR_RADIUS);
+  radarCtx.stroke();
+
+  const me = currentState.players.find(p => p.id === selfId);
+
+  // метки замеченных танков
+  currentState.players.forEach(p => {
+    if (p.id === selfId || !p.alive) return;
+    const seen = spottedTanks.get(p.id);
+    if (seen === undefined || now - seen > SPOT_HOLD_MS) return;
+    if (!me) return;
+    const dx = (p.x - me.x) / RADAR_RANGE * RADAR_RADIUS;
+    const dz = (p.z - me.z) / RADAR_RANGE * RADAR_RADIUS;
+    if (Math.hypot(dx, dz) > RADAR_RADIUS) return;
+    radarCtx.fillStyle = p.color;
+    radarCtx.beginPath();
+    radarCtx.arc(cx + dx, cy + dz, 6, 0, Math.PI * 2);
+    radarCtx.fill();
+    radarCtx.strokeStyle = 'rgba(255,255,255,0.7)';
+    radarCtx.lineWidth = 1.5;
+    radarCtx.stroke();
+  });
+
+  // сам игрок — стрелка по направлению башни
+  if (me && me.alive) {
+    radarCtx.save();
+    radarCtx.translate(cx, cy);
+    radarCtx.rotate(Math.PI - me.turretAngle);
+    radarCtx.fillStyle = '#ffffff';
+    radarCtx.beginPath();
+    radarCtx.moveTo(0, -12);
+    radarCtx.lineTo(6, 8);
+    radarCtx.lineTo(-6, 8);
+    radarCtx.closePath();
+    radarCtx.fill();
+    radarCtx.restore();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // МОБИЛЬНОЕ УПРАВЛЕНИЕ: джойстик (движение) + кнопки «Выстрел» и «Зум»
 // ---------------------------------------------------------------------------
 const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
@@ -2571,6 +2687,8 @@ function animate() {
     updateScopeInfo();
     updateArtilleryVisuals(now);
     updateFallingTrees(now);
+    updateSpotting(players, now);
+    drawRadar(now);
     updateCamera(players);
   }
 

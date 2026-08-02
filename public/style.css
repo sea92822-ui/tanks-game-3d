@@ -740,6 +740,21 @@ html, body {
 #touchControls { display: none; }
 body.touch #touchControls { display: block; }
 
+/* ---------- Радар: только замеченные танки ---------- */
+#radar {
+  position: fixed;
+  right: 20px;
+  bottom: 24px;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.25);
+  z-index: 15;
+  pointer-events: none;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+body.touch #radar { bottom: 300px; } /* выше кнопок тача */
+
 #joyBase {
   position: fixed;
   left: 24px;
