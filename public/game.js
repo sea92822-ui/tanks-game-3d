@@ -72,7 +72,8 @@ scene.add(hemiLight);
 const sunLight = new THREE.DirectionalLight(0xfff4e0, 1.0);
 sunLight.position.set(300, 500, 200);
 sunLight.castShadow = true;
-sunLight.shadow.bias = -0.0005;
+sunLight.shadow.bias = -0.0008;
+sunLight.shadow.normalBias = 1.5; // чистая самотень без артефактов
 sunLight.shadow.radius = 4; // мягкие края теней
 sunLight.shadow.camera.near = 50;
 sunLight.shadow.camera.far = 1500;
@@ -774,6 +775,14 @@ function createTankMesh(color, modelId) {
   barrel.add(breech);
 
   turretPivot.add(barrel);
+
+  // Тени: танк отбрасывает тень на себя и на другие танки
+  group.traverse(c => {
+    if (c.isMesh) {
+      c.castShadow = true;
+      c.receiveShadow = true;
+    }
+  });
 
   group.userData.turretPivot = turretPivot;
   group.userData.barrel = barrel;
