@@ -402,7 +402,7 @@ function preloadTreeModel() {
   new THREE.GLTFLoader().load('low_poly_tree_1.glb', (gltf) => {
     const bb = new THREE.Box3().setFromObject(gltf.scene);
     const h = bb.max.y - bb.min.y;
-    treeModelScale = 36 / h;                 // высота дерева ~36 юнитов
+    treeModelScale = 62 / h;                 // высота дерева ~62 юнита
     treeBaseLift = -bb.min.y * treeModelScale; // основание ставим на землю
     treeModel = gltf.scene;
     rebuildTrees();
@@ -429,14 +429,15 @@ function createTreeMesh(o, i) {
     tree.add(m);
   } else {
     tree = new THREE.Group();
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 6, 26, 8), new THREE.MeshStandardMaterial({ color: 0x6b4a2b }));
-    trunk.position.y = 13;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(5, 8, 44, 8), new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 0.9 }));
+    trunk.position.y = 22;
     tree.add(trunk);
-    const crown = new THREE.Mesh(new THREE.SphereGeometry(18, 8, 8), new THREE.MeshStandardMaterial({ color: 0x2f8a3c }));
-    crown.position.y = 38;
+    const crown = new THREE.Mesh(new THREE.SphereGeometry(30, 8, 8), new THREE.MeshStandardMaterial({ color: 0x2f8a3c, roughness: 0.85 }));
+    crown.position.y = 64;
     tree.add(crown);
   }
   tree.position.set(o.x + o.w / 2, 0, o.z + o.d / 2);
+  tree.castShadow = true; // группа тоже помечаем — надёжнее
   tree.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
   scene.add(tree);
   treeMeshes.set(i, { group: tree, fallen: !o.standing });

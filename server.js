@@ -195,9 +195,9 @@ function generateObstacles() {
   }
 
   // Деревья (с коллизией)
-  let trees = 0, attempts = 1500;
+  let trees = 0, attempts = 2000;
   while (trees < 180 && attempts-- > 0) {
-    const s = 28;
+    const s = 40;
     const x = 120 + Math.random() * (WORLD.width - 240);
     const z = 120 + Math.random() * (WORLD.depth - 240);
     const overlaps = list.some(o =>
