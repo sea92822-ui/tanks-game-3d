@@ -257,6 +257,59 @@ function syncTrees(trees) {
   });
 }
 
+// Модель дерева (low_poly_tree_1.glb): грузится асинхронно,
+// пока не загрузилась — используются процедурные деревья
+let treeModel = null;
+let treeModelScale = 1;
+let treeBaseLift = 0;
+
+function preloadTreeModel() {
+  if (!THREE.GLTFLoader) return;
+  new THREE.GLTFLoader().load('low_poly_tree_1.glb', (gltf) => {
+    const bb = new THREE.Box3().setFromObject(gltf.scene);
+    const h = bb.max.y - bb.min.y;
+    treeModelScale = 36 / h;                 // высота дерева ~36 юнитов
+    treeBaseLift = -bb.min.y * treeModelScale; // основание ставим на землю
+    treeModel = gltf.scene;
+    rebuildTrees();
+  }, undefined, (err) => console.warn('Не удалось загрузить модель дерева:', err));
+}
+preloadTreeModel();
+
+// Перестроить только деревья (после загрузки модели)
+function rebuildTrees() {
+  if (!obstaclesData.length) return;
+  treeMeshes.forEach(t => scene.remove(t.group));
+  treeMeshes.clear();
+  obstaclesData.forEach((o, i) => { if (o.type === 'tree') createTreeMesh(o, i); });
+}
+
+function createTreeMesh(o, i) {
+  let tree;
+  if (treeModel) {
+    tree = new THREE.Group();
+    const m = treeModel.clone(true);
+    m.scale.setScalar(treeModelScale);
+    m.position.y = treeBaseLift;
+    m.rotation.y = Math.random() * Math.PI * 2;
+    tree.add(m);
+  } else {
+    tree = new THREE.Group();
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 6, 26, 8), new THREE.MeshStandardMaterial({ color: 0x6b4a2b }));
+    trunk.position.y = 13;
+    tree.add(trunk);
+    const crown = new THREE.Mesh(new THREE.SphereGeometry(18, 8, 8), new THREE.MeshStandardMaterial({ color: 0x2f8a3c }));
+    crown.position.y = 38;
+    tree.add(crown);
+  }
+  tree.position.set(o.x + o.w / 2, 0, o.z + o.d / 2);
+  tree.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+  scene.add(tree);
+  treeMeshes.set(i, { group: tree, fallen: !o.standing });
+  if (!o.standing) tree.rotation.z = -1.55; // уже срубленное (старый сервер)
+  return tree;
+}
+
 function buildObstacles() {
   obstaclesData.forEach((o, i) => {
     let mesh;
@@ -271,18 +324,7 @@ function buildObstacles() {
       mesh = new THREE.Mesh(new THREE.BoxGeometry(o.w, 16, o.d), new THREE.MeshStandardMaterial({ color: 0xa0522d }));
       mesh.position.set(o.x + o.w / 2, 8, o.z + o.d / 2);
     } else if (o.type === 'tree') {
-      const tree = new THREE.Group();
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 6, 26, 8), new THREE.MeshStandardMaterial({ color: 0x6b4a2b }));
-      trunk.position.y = 13;
-      tree.add(trunk);
-      const crown = new THREE.Mesh(new THREE.SphereGeometry(18, 8, 8), new THREE.MeshStandardMaterial({ color: 0x2f8a3c }));
-      crown.position.y = 38;
-      tree.add(crown);
-      tree.position.set(o.x + o.w / 2, 0, o.z + o.d / 2);
-      mesh = tree;
-      // деревья отдельно храним: по индексу отслеживаем снос
-      treeMeshes.set(i, { group: tree, fallen: !o.standing });
-      if (!o.standing) tree.rotation.z = -1.55; // уже срубленное (старый сервер)
+      mesh = createTreeMesh(o, i);
     } else {
       mesh = new THREE.Mesh(new THREE.BoxGeometry(o.w, 40, o.d), new THREE.MeshStandardMaterial({ color: 0x6b6b6b }));
       mesh.position.set(o.x + o.w / 2, 20, o.z + o.d / 2);
