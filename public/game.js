@@ -272,11 +272,11 @@ function buildObstacles() {
       mesh.position.set(o.x + o.w / 2, 8, o.z + o.d / 2);
     } else if (o.type === 'tree') {
       const tree = new THREE.Group();
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(2, 3.5, 14, 8), new THREE.MeshStandardMaterial({ color: 0x6b4a2b }));
-      trunk.position.y = 7;
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 6, 26, 8), new THREE.MeshStandardMaterial({ color: 0x6b4a2b }));
+      trunk.position.y = 13;
       tree.add(trunk);
-      const crown = new THREE.Mesh(new THREE.SphereGeometry(10, 8, 8), new THREE.MeshStandardMaterial({ color: 0x2f8a3c }));
-      crown.position.y = 20;
+      const crown = new THREE.Mesh(new THREE.SphereGeometry(18, 8, 8), new THREE.MeshStandardMaterial({ color: 0x2f8a3c }));
+      crown.position.y = 38;
       tree.add(crown);
       tree.position.set(o.x + o.w / 2, 0, o.z + o.d / 2);
       mesh = tree;
