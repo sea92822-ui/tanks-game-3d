@@ -138,6 +138,112 @@ scene.add(skyDome);
 // Лёгкая тёплая дымка: дальние объекты и край карты мягко растворяются (создаёт масштаб)
 scene.fog = new THREE.Fog(0xf2c9a0, 2500, 6200);
 
+// ---------------------------------------------------------------------------
+// ЦИКЛ СУТОК: утро → день → закат → ночь (полный круг за DAY_CYCLE_SECONDS)
+// ---------------------------------------------------------------------------
+const DAY_CYCLE_SECONDS = 600; // 10 минут на полный круг
+const TIME_KEYFRAMES = [
+  { t: 0.00, name: '🌙 Ночь',    top: 0x060c1e, mid: 0x0e1830, bot: 0x16233f, fog: 0x0a1424, ambC: 0x2a3860, ambI: 0.60, hemiC: 0x2e4266, hemiG: 0x0a1522, hemiI: 0.30, sunC: 0x8fa8d8, sunI: 0.20, sunEl: -0.55, stars: 1.0 },
+  { t: 0.20, name: '🌄 Утро',    top: 0x2e5da8, mid: 0xa8c8ef, bot: 0xffc9a0, fog: 0xf2c6a2, ambC: 0xfff0d8, ambI: 0.50, hemiC: 0xffd9b0, hemiG: 0x4a7a4a, hemiI: 0.42, sunC: 0xffd9a0, sunI: 0.95, sunEl: 0.30, stars: 0.0 },
+  { t: 0.40, name: '🌞 День',    top: 0x1e4fa0, mid: 0x8fb8e8, bot: 0xf5b87e, fog: 0xf2c9a0, ambC: 0xcfe4ff, ambI: 0.32, hemiC: 0xffd9b0, hemiG: 0x2f5a2f, hemiI: 0.45, sunC: 0xffb070, sunI: 1.30, sunEl: 0.85, stars: 0.0 },
+  { t: 0.60, name: '🌇 Вечер',   top: 0x2b4f8f, mid: 0xa79fc8, bot: 0xffa36a, fog: 0xefbe9e, ambC: 0xf4dcff, ambI: 0.42, hemiC: 0xffc9a0, hemiG: 0x3f5a3f, hemiI: 0.40, sunC: 0xffa050, sunI: 1.05, sunEl: 0.42, stars: 0.0 },
+  { t: 0.75, name: '🌇 Закат',   top: 0x3a2a5e, mid: 0xd06a3c, bot: 0xff9a44, fog: 0xe88f5a, ambC: 0xffc8a0, ambI: 0.52, hemiC: 0xff9a5a, hemiG: 0x3a2a2a, hemiI: 0.50, sunC: 0xff7a2a, sunI: 1.20, sunEl: 0.10, stars: 0.05 },
+  { t: 0.90, name: '🌆 Сумерки', top: 0x101530, mid: 0x2c3a5e, bot: 0x5a4a6e, fog: 0x2c3350, ambC: 0x40506e, ambI: 0.55, hemiC: 0x4a5a8a, hemiG: 0x16202e, hemiI: 0.28, sunC: 0x8090c0, sunI: 0.22, sunEl: -0.12, stars: 0.7 },
+  { t: 1.00, name: '🌙 Ночь',    top: 0x060c1e, mid: 0x0e1830, bot: 0x16233f, fog: 0x0a1424, ambC: 0x2a3860, ambI: 0.60, hemiC: 0x2e4266, hemiG: 0x0a1522, hemiI: 0.30, sunC: 0x8fa8d8, sunI: 0.20, sunEl: -0.55, stars: 1.0 },
+];
+
+// Звёзды: видны ночью и в сумерках, гаснут днём
+const starField = (() => {
+  const N = 900;
+  const pos = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const e = 0.06 + Math.random() * 1.1; // высота над горизонтом
+    const r = 6900;
+    pos[i * 3]     = Math.cos(a) * Math.cos(e) * r;
+    pos[i * 3 + 1] = Math.sin(e) * r;
+    pos[i * 3 + 2] = Math.sin(a) * Math.cos(e) * r;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({
+    color: 0xffffff, size: 1.7, sizeAttenuation: false,
+    transparent: true, opacity: 0, depthWrite: false, fog: false,
+  });
+  const pts = new THREE.Points(geo, mat);
+  scene.add(pts);
+  return pts;
+})();
+
+const timeOfDayEl = document.getElementById('timeOfDay');
+let timeOfDay = Math.random() * DAY_CYCLE_SECONDS; // стартуем со случайной фазы суток
+let lastPhaseUpdate = 0;
+const _sunDir = new THREE.Vector3(0.5, 0.8, 0.3);
+const _moonDir = new THREE.Vector3();
+const sunDirNorm = new THREE.Vector3(0.5, 0.8, 0.3); // направление на солнце/луну (для камеры)
+const _colA = new THREE.Color();
+const _colB = new THREE.Color();
+const _colT = new THREE.Color();
+
+function sampleTimePhase(t) {
+  const kf = TIME_KEYFRAMES;
+  let i = 0;
+  while (i < kf.length - 1 && t > kf[i + 1].t) i++;
+  return { a: kf[i], b: kf[i + 1], f: Math.min(1, Math.max(0, (t - kf[i].t) / (kf[i + 1].t - kf[i].t))) };
+}
+
+function updateTimeOfDay(dt, players) {
+  timeOfDay += dt;
+  if (timeOfDay >= DAY_CYCLE_SECONDS) timeOfDay -= DAY_CYCLE_SECONDS;
+  const t = timeOfDay / DAY_CYCLE_SECONDS;
+  const { a, b, f } = sampleTimePhase(t);
+
+  // Небо и дымка
+  _colT.lerpColors(_colA.setHex(a.top), _colB.setHex(b.top), f);
+  skyDome.material.uniforms.topColor.value.copy(_colT);
+  _colT.lerpColors(_colA.setHex(a.mid), _colB.setHex(b.mid), f);
+  skyDome.material.uniforms.midColor.value.copy(_colT);
+  _colT.lerpColors(_colA.setHex(a.bot), _colB.setHex(b.bot), f);
+  skyDome.material.uniforms.botColor.value.copy(_colT);
+  _colT.lerpColors(_colA.setHex(a.fog), _colB.setHex(b.fog), f);
+  scene.fog.color.copy(_colT);
+
+  // Свет
+  _colT.lerpColors(_colA.setHex(a.ambC), _colB.setHex(b.ambC), f);
+  ambientLight.color.copy(_colT);
+  ambientLight.intensity = lerp(a.ambI, b.ambI, f);
+  _colT.lerpColors(_colA.setHex(a.hemiC), _colB.setHex(b.hemiC), f);
+  hemiLight.color.copy(_colT);
+  _colT.lerpColors(_colA.setHex(a.hemiG), _colB.setHex(b.hemiG), f);
+  hemiLight.groundColor.copy(_colT);
+  hemiLight.intensity = lerp(a.hemiI, b.hemiI, f);
+  _colT.lerpColors(_colA.setHex(a.sunC), _colB.setHex(b.sunC), f);
+  sunLight.color.copy(_colT);
+  sunLight.intensity = lerp(a.sunI, b.sunI, f);
+
+  // Звёзды
+  starField.material.opacity = lerp(a.stars, b.stars, f) * 0.9;
+
+  // Солнце ходит по дуге восток→запад; ночью вместо него — луна с другой стороны
+  const sunEl = lerp(a.sunEl, b.sunEl, f);
+  const az = (t - 0.25) * Math.PI * 2;
+  const cosEl = Math.cos(sunEl);
+  _sunDir.set(Math.cos(az) * cosEl, Math.sin(sunEl), Math.sin(az) * cosEl);
+  if (_sunDir.y < 0) {
+    _moonDir.set(-_sunDir.x, 0.18, -_sunDir.z).normalize();
+    sunDirNorm.copy(_moonDir);
+  } else {
+    sunDirNorm.copy(_sunDir);
+  }
+
+  // Индикатор фазы суток (обновляем раз в полсекунды)
+  const nowMs = performance.now();
+  if (nowMs - lastPhaseUpdate > 500) {
+    lastPhaseUpdate = nowMs;
+    if (timeOfDayEl) timeOfDayEl.textContent = f < 0.5 ? a.name : b.name;
+  }
+}
+
 // Вспышка у дула (общий свет для всех выстрелов)
 const muzzleLight = new THREE.PointLight(0xffaa44, 0, 240);
 muzzleLight.position.set(0, 30, 0);
@@ -3331,8 +3437,8 @@ function updateCamera(players) {
   const mesh = tankMeshes.get(selfId);
   if (!mesh) return;
 
-  // Солнце и его тени следуют за игроком
-  sunLight.position.set(me.x + 300, 500, me.z + 200);
+  // Солнце (или луна ночью) и его тени следуют за игроком
+  sunLight.position.set(me.x + sunDirNorm.x * 1200, me.y + 80 + sunDirNorm.y * 1200, me.z + sunDirNorm.z * 1200);
   sunLight.target.position.set(me.x, 0, me.z);
 
   // Плавный переход зума (FOV) между обычным видом и прицелом
@@ -3433,6 +3539,7 @@ function animate() {
     drawMinimap(now);
     updateCamera(players);
     updateTankLabels(players);
+    updateTimeOfDay(dt, players);
     skyDome.position.copy(camera.position);
   }
 

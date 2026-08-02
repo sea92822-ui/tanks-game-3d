@@ -254,6 +254,22 @@ html, body {
   border-radius: 6px;
 }
 
+/* ---------- Время суток ---------- */
+#timeOfDay {
+  position: fixed;
+  top: 58px;
+  right: 12px;
+  z-index: 10;
+  color: #fff;
+  font-size: 13px;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px #000;
+  user-select: none;
+  background: rgba(0,0,0,0.4);
+  padding: 4px 12px;
+  border-radius: 6px;
+}
+
 /* ---------- Командный счёт (Team Deathmatch) ---------- */
 #teamScore {
   position: fixed;
