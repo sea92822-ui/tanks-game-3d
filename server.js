@@ -64,6 +64,39 @@ const BOT_NAMES = [
 const BOT_TAUNTS = ['Готово!', 'Так ему и надо', 'Хех, лёгкая цель', 'Не выйдет, братан', 'Цель уничтожена', 'Эх, быстрая смерть', 'Вот это заезд!'];
 let botCounter = 1;
 
+// Сложности ботов: как быстро и точно они стреляют, как манёврят
+const BOT_DIFFICULTIES = {
+  easy: {
+    aimErr: 0.10,            // разброс прицела, рад (больше — хуже стреляет)
+    aimUpdateMs: [900, 1600],// как часто пересчитывается ошибка прицела
+    reactMs: 700,            // задержка выстрела после наведения
+    reaimMs: [500, 900],     // пауза, если цель ушла из прицела
+    fireRange: 1000,         // дистанция, с которой стреляет
+    orbit: false,            // не маневрирует — стоит и стреляет
+    combatRange: [420, 620], // дистанция, на которой останавливается
+  },
+  hard: {
+    aimErr: 0.045,
+    aimUpdateMs: [350, 750],
+    reactMs: 300,
+    reaimMs: [200, 550],
+    fireRange: 1300,
+    orbit: true,
+    combatRange: [380, 640],
+  },
+  expert: {
+    aimErr: 0.02,
+    aimUpdateMs: [150, 350],
+    reactMs: 150,
+    reaimMs: [100, 250],
+    fireRange: 1500,
+    orbit: true,
+    combatRange: [330, 520], // агрессивнее — подходит ближе
+  },
+};
+const DIFF_RANK = { easy: 0, hard: 1, expert: 2 };
+let botsDifficulty = 'hard'; // выбранная игроками сложность (максимум среди живых)
+
 // Артиллерия: удар по точке раз в минуту (с задержкой падения снаряда)
 const ARTILLERY_COOLDOWN_MS = 60000;
 const ARTILLERY_RADIUS = 130;
@@ -348,6 +381,7 @@ function createPlayer(id, nickname, color, model, team) {
     killsSinceUpgrade: 0,
     artilleryReadyAt: 0, // раз в минуту можно вызвать артиллерию
     withBots: true,     // игрок хочет играть с ботами
+    botDifficulty: 'hard', // выбранная игроком сложность ботов
     chatCooldownUntil: 0, // защита от спама в чате
   };
 }
@@ -366,13 +400,15 @@ function createBot(team) {
   bot.bot = true;
   bot.model = team === 0 ? 'heavy' : 'light'; // у красных тяжёлые, у синих быстрые — разнообразие
   bot.color = TEAM_COLORS[team];
+  bot.botCfg = BOT_DIFFICULTIES[botsDifficulty] || BOT_DIFFICULTIES.hard;
   // Параметры ИИ
-  bot.botReactAt = 0;        // ближайший момент, когда бот может выстрелить
+  bot.botReactAt = Date.now() + bot.botCfg.reactMs; // первый выстрел не мгновенно
   bot.botAimErr = 0;         // текущая ошибка прицела (случайная, обновляется)
   bot.botAimUntil = 0;       // когда пересчитать ошибку прицела
   bot.botOrbitDir = Math.random() < 0.5 ? 1 : -1; // направление обхода вокруг цели
   bot.botOrbitUntil = 0;
-  bot.botCombatRange = 380 + Math.random() * 260; // предпочитаемая дистанция боя
+  const cr = bot.botCfg.combatRange;
+  bot.botCombatRange = cr[0] + Math.random() * (cr[1] - cr[0]); // предпочитаемая дистанция боя
   bot.botWanderAngle = Math.random() * Math.PI * 2; // направление без цели
   bot.botStuckUntil = 0;     // если застрял — поворачиваем жёстче
   bot.input.ammo = 'ap';
@@ -393,6 +429,35 @@ function anyHumanWantsBots() {
     if (!p.bot && p.withBots) return true;
   }
   return false;
+}
+
+// Сложность ботов = максимум выбранного живыми игроками (easy < hard < expert)
+function currentBotDifficulty() {
+  let bestRank = -1;
+  let best = 'hard';
+  for (const id in players) {
+    const p = players[id];
+    if (p.bot) continue;
+    const r = DIFF_RANK[p.botDifficulty] !== undefined ? DIFF_RANK[p.botDifficulty] : 1;
+    if (r > bestRank) { bestRank = r; best = p.botDifficulty; }
+  }
+  return best;
+}
+
+function applyBotDifficulty() {
+  const d = currentBotDifficulty();
+  if (d === botsDifficulty) return;
+  botsDifficulty = d;
+  const cfg = BOT_DIFFICULTIES[d];
+  for (const id in players) {
+    const b = players[id];
+    if (!b.bot) continue;
+    b.botCfg = cfg;
+    b.botAimErr = Math.min(b.botAimErr, cfg.aimErr); // при росте сложности сразу точнее
+    const cr = cfg.combatRange;
+    b.botCombatRange = cr[0] + Math.random() * (cr[1] - cr[0]);
+  }
+  console.log(`Сложность ботов: ${d}`);
 }
 
 function syncBots() {
@@ -427,8 +492,10 @@ io.on('connection', (socket) => {
     const team = data && (data.team === 0 || data.team === 1) ? data.team : null;
     const player = createPlayer(socket.id, nickname, color, data && data.model, team);
     if (data && typeof data.withBots === 'boolean') player.withBots = data.withBots;
+    if (data && BOT_DIFFICULTIES[data.botDifficulty]) player.botDifficulty = data.botDifficulty;
     players[socket.id] = player;
     syncBots();
+    applyBotDifficulty();
 
     socket.emit('init', {
       selfId: socket.id,
@@ -484,6 +551,7 @@ io.on('connection', (socket) => {
     if (p) console.log(`Игрок отключился: ${p.nickname}`);
     delete players[socket.id];
     syncBots();
+    applyBotDifficulty();
   });
 });
 
@@ -674,6 +742,7 @@ function solidProbe(x, z) {
 
 function updateBot(bot, dt, now) {
   const input = bot.input;
+  const cfg = bot.botCfg || BOT_DIFFICULTIES.hard;
 
   // ---- Ближайший живой враг ----
   let target = null;
@@ -697,23 +766,23 @@ function updateBot(bot, dt, now) {
     return;
   }
 
-  // ---- Прицел башни на врага с небольшой ошибкой ----
+  // ---- Прицел башни на врага с ошибкой по сложности ----
   const aim = Math.atan2(target.x - bot.x, target.z - bot.z);
   if (now >= bot.botAimUntil) {
-    bot.botAimUntil = now + 350 + Math.random() * 400;
-    bot.botAimErr = (Math.random() - 0.5) * 0.09;
+    bot.botAimUntil = now + cfg.aimUpdateMs[0] + Math.random() * (cfg.aimUpdateMs[1] - cfg.aimUpdateMs[0]);
+    bot.botAimErr = (Math.random() - 0.5) * 2 * cfg.aimErr;
   }
   input.targetTurretAngle = aim + bot.botAimErr;
 
   // ---- Огонь: доведённый прицел + реакция + прямая видимость ----
   const aimDiff = Math.abs(angleDiff(input.targetTurretAngle, bot.turretAngle));
-  const canShoot = aimDiff < 0.12 && best < 1300 && hasLineOfSight(bot.x, bot.z, target.x, target.z);
+  const canShoot = aimDiff < 0.12 && best < cfg.fireRange && hasLineOfSight(bot.x, bot.z, target.x, target.z);
   if (canShoot && now >= bot.botReactAt) {
     input.shooting = true;
   } else {
     input.shooting = false;
     if (!canShoot && now >= bot.botReactAt) {
-      bot.botReactAt = now + 200 + Math.random() * 350; // заново прицеливается
+      bot.botReactAt = now + cfg.reaimMs[0] + Math.random() * (cfg.reaimMs[1] - cfg.reaimMs[0]); // заново прицеливается
     }
   }
 
@@ -725,12 +794,21 @@ function updateBot(bot, dt, now) {
     moveAngle = bot.chassisAngle + Math.PI / 2 * (bot.botSteerDir || 1);
   } else if (best > bot.botCombatRange + 80) {
     moveAngle = aim; // едем на врага
-  } else {
+  } else if (cfg.orbit) {
     if (now >= bot.botOrbitUntil) {
       bot.botOrbitUntil = now + 2500 + Math.random() * 2500;
       bot.botOrbitDir = -bot.botOrbitDir;
     }
     moveAngle = aim + Math.PI / 2 * bot.botOrbitDir; // кружим, чтобы не стоять столбом
+  } else if (!canShoot && !hasLineOfSight(bot.x, bot.z, target.x, target.z)) {
+    // лёгкий бот: враг за деревом — отходим в сторону короткими рывками
+    if (now >= bot.botOrbitUntil) {
+      bot.botOrbitUntil = now + 1500 + Math.random() * 1000;
+      bot.botOrbitDir = -bot.botOrbitDir;
+    }
+    moveAngle = aim + Math.PI / 2 * bot.botOrbitDir;
+  } else {
+    moveAngle = null; // лёгкие боты стоят и стреляют (null = стоим на месте)
   }
 
   // Объезд препятствий: зондируем место впереди корпуса (ближний и дальний зонд)
@@ -754,17 +832,26 @@ function updateBot(bot, dt, now) {
     input.forward = true;
   }
 
-  const turnDiff = angleDiff(moveAngle, bot.chassisAngle);
-  input.forward = steerActive || Math.abs(turnDiff) < 1.1;
-  input.back = false;
-  input.left = turnDiff > 0.1;
-  input.right = turnDiff < -0.1;
+  if (moveAngle === null) {
+    // бот на месте: не двигаемся, пока помеха не заставит объезжать
+    input.forward = false;
+    input.back = false;
+    input.left = false;
+    input.right = false;
+  } else {
+    const turnDiff = angleDiff(moveAngle, bot.chassisAngle);
+    input.forward = steerActive || Math.abs(turnDiff) < 1.1;
+    input.back = false;
+    input.left = turnDiff > 0.1;
+    input.right = turnDiff < -0.1;
+  }
 
-  // Уперся в препятствие носом (forward задан, но места нет) — уходим вбок
+  // Уперся в препятствие носом (forward задан, но места нет) — уходим вбок.
+  // Нормальный шаг за тик ~2.7 юнита; меньше половины — значит реально блокирует
   const moved = Math.hypot(bot.x - (bot.botLastX || bot.x), bot.z - (bot.botLastZ || bot.z));
   bot.botLastX = bot.x;
   bot.botLastZ = bot.z;
-  if (!steerActive && input.forward && moved < 6) {
+  if (!steerActive && input.forward && moved < 1.5) {
     bot.botPushTime = (bot.botPushTime || 0) + dt;
     if (bot.botPushTime > 0.55) {
       bot.botPushTime = 0;

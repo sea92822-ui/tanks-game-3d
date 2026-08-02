@@ -880,6 +880,7 @@ const startBtn = document.getElementById('startBtn');
 const chatInput = document.getElementById('chatInput');
 const chatLog = document.getElementById('chatLog');
 const botsCheckbox = document.getElementById('botsCheckbox');
+const botDifficultySelect = document.getElementById('botDifficultySelect');
 
 const TANK_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#ff6fa4',
   '#34495e', '#16a085', '#d35400', '#7f8c8d', '#8e44ad', '#ffffff'];
@@ -1046,12 +1047,16 @@ nicknameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') startG
 
 // Запоминаем выбор «играть с ботами»
 if (localStorage.getItem('tanksBots') === '0') botsCheckbox.checked = false;
+// Запоминаем сложность ботов
+const savedDiff = localStorage.getItem('tanksDifficulty');
+if (savedDiff === 'easy' || savedDiff === 'hard' || savedDiff === 'expert') botDifficultySelect.value = savedDiff;
 
 function startGame() {
   const nickname = nicknameInput.value.trim();
   unlockAudio(); // разблокируем звук по жесту пользователя
   nicknameOverlay.classList.add('hidden');
   localStorage.setItem('tanksBots', botsCheckbox.checked ? '1' : '0');
+  localStorage.setItem('tanksDifficulty', botDifficultySelect.value);
   connectToServer(nickname, selectedColor);
 }
 
@@ -1062,7 +1067,7 @@ function connectToServer(nickname, color) {
   socket = io({ transports: ['websocket', 'polling'] }); // WebSocket — низкая задержка
 
   socket.on('connect', () => {
-    socket.emit('join', { nickname, color, model: selectedModel, team: selectedTeam, withBots: botsCheckbox.checked });
+    socket.emit('join', { nickname, color, model: selectedModel, team: selectedTeam, withBots: botsCheckbox.checked, botDifficulty: botDifficultySelect.value });
   });
 
   socket.on('init', (data) => {
