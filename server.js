@@ -397,9 +397,9 @@ function buffActive(p, id) {
 function createBot(team) {
   const n = botCounter++;
   const name = BOT_NAMES[team][Math.floor(Math.random() * BOT_NAMES[team].length)] + '-' + n;
-  const bot = createPlayer('bot-' + n, name, TEAM_COLORS[team], 'light', team);
+  const bot = createPlayer('bot-' + n, name, TEAM_COLORS[team], TANK_MODELS[Math.floor(Math.random() * TANK_MODELS.length)], team);
   bot.bot = true;
-  bot.model = team === 0 ? 'heavy' : 'light'; // у красных тяжёлые, у синих быстрые — разнообразие
+  bot.model = TANK_MODELS[Math.floor(Math.random() * TANK_MODELS.length)]; // разные танки у ботов
   bot.color = TEAM_COLORS[team];
   bot.botCfg = BOT_DIFFICULTIES[botsDifficulty] || BOT_DIFFICULTIES.hard;
   // Параметры ИИ
@@ -1032,7 +1032,9 @@ function fireBullet(p) {
       burn: buffActive(p, 'burn'),
       jam: buffActive(p, 'jam'),
       blast: buffActive(p, 'blast') || ammo === 'he',
-      until: Date.now() + BULLET_MAX_TIME * 1000, // снаряд живёт максимум 0.6 сек
+      // Снаряды игроков летят бесконечно, пока не попадут или не покинут карту;
+      // боты ограничены временем полёта, чтобы их стрельба оставалась честной
+      until: p.bot ? Date.now() + BULLET_MAX_TIME * 1000 : Infinity,
     });
   }
 }

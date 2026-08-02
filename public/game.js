@@ -244,11 +244,6 @@ function updateTimeOfDay(dt, players) {
   }
 }
 
-// Вспышка у дула (общий свет для всех выстрелов)
-const muzzleLight = new THREE.PointLight(0xffaa44, 0, 240);
-muzzleLight.position.set(0, 30, 0);
-scene.add(muzzleLight);
-
 // ---------------------------------------------------------------------------
 // ОТРАЖЕНИЯ: окружающая карта для блеска металла (не на «Низкой»)
 // ---------------------------------------------------------------------------
@@ -2656,8 +2651,7 @@ function syncBullets(bullets) {
       mesh = new THREE.Mesh(bulletGeo, mat);
       scene.add(mesh);
       bulletMeshes.set(b.id, mesh);
-      spawnMuzzleFlash(b.x, b.z);
-      spawnMuzzleSmoke(b); // дым поднимается вокруг танка — видят все
+      spawnMuzzleFlash(b);
       if (b.ownerId === selfId) {
         addShake(0.35); // отдача при своём выстреле
         playShotSound();
@@ -2694,51 +2688,156 @@ function getSharedBulletGeometry() {
 }
 
 // ---------------------------------------------------------------------------
-// ЭФФЕКТ ВЫСТРЕЛА: вспышка у дула + тряска камеры
+// ЭФФЕКТ ВЫСТРЕЛА: вспышка у дула + дым из дула + тряска камеры
 // ---------------------------------------------------------------------------
-const muzzleFlashes = [];
-const flashGeo = new THREE.SphereGeometry(6, 8, 8);
-const flashMat = new THREE.MeshBasicMaterial({ color: 0xffd75e, transparent: true });
-const FLASH_LIFE_MS = 90;
 
-function spawnMuzzleFlash(x, z) {
-  if (!settingsState.effects) return;
-  const mesh = new THREE.Mesh(flashGeo, flashMat.clone());
-  mesh.position.set(x, 18, z);
-  scene.add(mesh);
-  muzzleFlashes.push({ mesh, born: performance.now() });
-  muzzleLight.position.set(x, 26, z);
-  muzzleLight.intensity = 3;
+// Мягкий полупрозрачный «клуб» — спрайт с градиентом прозрачности по краям
+function makeSoftPuffTexture() {
+  const s = 64;
+  const c = document.createElement('canvas');
+  c.width = c.height = s;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 1, 32, 32, 30);
+  g.addColorStop(0, 'rgba(255,255,255,0.85)');
+  g.addColorStop(0.45, 'rgba(255,255,255,0.4)');
+  g.addColorStop(0.8, 'rgba(255,255,255,0.1)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+  const tex = new THREE.CanvasTexture(c);
+  tex.needsUpdate = true;
+  return tex;
 }
 
-// Дым поднимается вокруг танка после выстрела (виден всем)
-function spawnMuzzleSmoke(b) {
+// Звезда вспышки: яркое ядро + жёлто-оранжевые лучи
+function makeFlashTexture() {
+  const s = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = s;
+  const ctx = c.getContext('2d');
+  const cx = s / 2;
+  const glow = ctx.createRadialGradient(cx, cx, 0, cx, cx, cx);
+  glow.addColorStop(0, 'rgba(255,255,255,1)');
+  glow.addColorStop(0.25, 'rgba(255,225,150,0.85)');
+  glow.addColorStop(0.6, 'rgba(255,150,50,0.22)');
+  glow.addColorStop(1, 'rgba(255,120,30,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, s, s);
+  ctx.save();
+  ctx.translate(cx, cx);
+  for (let i = 0; i < 6; i++) {
+    ctx.rotate(Math.PI / 3);
+    const g = ctx.createLinearGradient(0, 0, 62, 0);
+    g.addColorStop(0, 'rgba(255,240,190,0.85)');
+    g.addColorStop(1, 'rgba(255,190,80,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(0, -3);
+    ctx.lineTo(62, 0);
+    ctx.lineTo(0, 3);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+  const tex = new THREE.CanvasTexture(c);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+const softPuffTex = makeSoftPuffTexture();
+const flashTex = makeFlashTexture();
+
+// Быстрые вспышки у дула: звезда из лучей + яркое ядро — живут доли секунды
+const muzzleFlashes = [];
+const FLASH_LIFE_MS = 80;
+
+function spawnMuzzleFlash(b) {
   if (!settingsState.effects) return;
   const shooter = currentState.players.find(pl => pl.id === b.ownerId);
-  const cx = shooter ? shooter.x : b.x;
-  const cz = shooter ? shooter.z : b.z;
+  // точка дула: кончик ствола танка стрелка (если он уже на сцене)
+  let mx = b.x, my = 18, mz = b.z;
+  const mesh = tankMeshes.get(b.ownerId);
+  if (mesh && mesh.userData.barrel) {
+    const tip = mesh.userData.barrel.localToWorld(new THREE.Vector3(0, 0, 34));
+    mx = tip.x; my = tip.y; mz = tip.z;
+  }
+  // направление выстрела — из вектора полёта пули
+  let dx = b.dirX || 0, dz = b.dirZ || 0;
+  const dl = Math.hypot(dx, dz);
+  if (dl < 0.01) {
+    const ta = shooter ? shooter.turretAngle : 0;
+    dx = Math.sin(ta); dz = Math.cos(ta);
+  } else { dx /= dl; dz /= dl; }
 
-  for (let i = 0; i < 14; i++) {
-    const mat = new THREE.MeshBasicMaterial({ color: 0xc8c8c8, transparent: true });
-    const mesh = new THREE.Mesh(particleGeo, mat);
-    mesh.scale.setScalar(5 + Math.random() * 6);
-    const ang = Math.random() * Math.PI * 2;
-    const r = 8 + Math.random() * 20;
-    mesh.position.set(cx + Math.cos(ang) * r, 8 + Math.random() * 14, cz + Math.sin(ang) * r);
-    scene.add(mesh);
-    particles.push({
-      mesh,
-      vx: (Math.random() - 0.5) * 22,
-      vy: 28 + Math.random() * 26,
-      vz: (Math.random() - 0.5) * 22,
-      grav: 16, // дым лёгкий — поднимается вверх
-      grow: 0.55,
-      born: performance.now(),
-      life: 1500 + Math.random() * 900,
-      ph: Math.random() * Math.PI * 2,
-      fr: 1.2 + Math.random() * 1.8,
-      am: 10 + Math.random() * 18,
-      startOpacity: 0.75,
+  const star = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: flashTex, color: 0xffd75e, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  }));
+  star.position.set(mx, my, mz);
+  star.scale.setScalar(30);
+  scene.add(star);
+  muzzleFlashes.push({ mesh: star, born: performance.now(), baseScale: 30, growMult: 3.4 });
+
+  const core = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: softPuffTex, color: 0xfff7df, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  }));
+  core.position.set(mx, my, mz);
+  core.scale.setScalar(14);
+  scene.add(core);
+  muzzleFlashes.push({ mesh: core, born: performance.now(), baseScale: 14, growMult: 0.7, baseOpacity: 0.95 });
+
+  // кратковременный свет у дула — освещает броню и землю рядом
+  spawnFlashLight(mx, my, mz, 30, 260, 90);
+
+  // направленный мини-залп дыма и искр из дула
+  spawnMuzzleSmoke(mx, my, mz, dx, dz);
+}
+
+// Дым и искры вылетают из дула вперёд + клубы, маскирующие танк
+function spawnMuzzleSmoke(mx, my, mz, dx, dz) {
+  if (!settingsState.effects) return;
+  // резкий направленный залп дыма — быстро рассеивается
+  for (let i = 0; i < 9; i++) {
+    const sp = 110 + Math.random() * 150;
+    const ang = (Math.random() - 0.5) * 0.85;
+    const c = Math.cos(ang), s = Math.sin(ang);
+    spawnPuff(mx, my, mz, 0x8f8f8f, 2.6 + Math.random() * 2.2, {
+      vx: (dx * c - dz * s) * sp,
+      vy: 26 + Math.random() * 40,
+      vz: (dz * c + dx * s) * sp,
+      grav: -18, // дым лёгкий — тянет вверх
+      grow: 5.5,
+      life: 320 + Math.random() * 280,
+      opacity: 0.5,
+      am: 30
+    });
+  }
+  // мелкие яркие искры летят вперёд и быстро гаснут
+  for (let i = 0; i < 9; i++) {
+    const sp = 200 + Math.random() * 260;
+    const ang = (Math.random() - 0.5) * 0.7;
+    const c = Math.cos(ang), s = Math.sin(ang);
+    spawnPuff(mx, my, mz, i % 2 ? 0xfff3c4 : 0xffd75e, 1.6 + Math.random() * 1.2, {
+      vx: (dx * c - dz * s) * sp,
+      vy: 40 + Math.random() * 80,
+      vz: (dz * c + dx * s) * sp,
+      grav: 60,
+      grow: 2.2,
+      life: 140 + Math.random() * 160,
+      opacity: 0.95,
+      am: 8,
+      blend: true
+    });
+  }
+  // несколько клубов дыма поднимаются вокруг танка — враги видят, что тут стреляли
+  for (let i = 0; i < 6; i++) {
+    spawnPuff(mx + (Math.random() - 0.5) * 14, 10 + Math.random() * 10, mz + (Math.random() - 0.5) * 14, 0x9a9a9a, 5 + Math.random() * 3, {
+      vy: 20 + Math.random() * 22,
+      grow: 3.2,
+      life: 900 + Math.random() * 500,
+      opacity: 0.38,
+      am: 16
     });
   }
 }
@@ -2754,10 +2853,10 @@ function updateMuzzleFlashes() {
       muzzleFlashes.splice(i, 1);
       continue;
     }
-    f.mesh.material.opacity = 1 - age / FLASH_LIFE_MS;
-    f.mesh.scale.setScalar(1 + age * 0.06);
+    const t = age / FLASH_LIFE_MS;
+    f.mesh.material.opacity = (f.baseOpacity !== undefined ? f.baseOpacity : 1) * Math.pow(1 - t, 2);
+    f.mesh.scale.setScalar(f.baseScale * (1 + t * f.growMult));
   }
-  muzzleLight.intensity = Math.max(0, muzzleLight.intensity * 0.8 - 0.02);
 }
 
 let shake = 0;
@@ -2791,10 +2890,20 @@ function spawnExplosion(x, z) {
   scene.add(group);
   explosions.push({ group, born: performance.now() });
 
-  // Огненные частицы + искры + пылевая волна
+  // Огненные частицы + искры + пылевая волна + клубящийся дым
   spawnParticles(x, 18, z, 18, [0xff8a2a, 0xffd75e, 0xff5a3d, 0xffffff], 200, 1.4, 700, 2.4, 2);
   spawnSparkBurst(x, 16, z, 18, 0xffd75e, 320, 420);
   spawnDustWave(x, z);
+  for (let i = 0; i < 8; i++) {
+    spawnPuff(x + (Math.random() - 0.5) * 14, 14 + Math.random() * 10, z + (Math.random() - 0.5) * 14,
+      Math.random() < 0.5 ? 0x4a4a4a : 0x6a5a4a, 4 + Math.random() * 3.5, {
+        vy: 30 + Math.random() * 30,
+        grow: 3,
+        life: 1000 + Math.random() * 600,
+        opacity: 0.45,
+        am: 18
+      });
+  }
 }
 
 // Попадание снаряда в броню: искры с гравитацией, вспышка света, осколки, дым
@@ -2875,10 +2984,19 @@ function spawnImpactDebris(x, z) {
   }
 }
 
-// Дымные следы от точки соприкосновения снаряда с бронёй
+// Дымные клубы в точке попадания — мягкие спрайты, поднимаются и тают
 function spawnImpactSmoke(x, z) {
   if (!settingsState.effects) return;
-  spawnParticles(x, 14, z, 5, [0x444444, 0x555555, 0x666666], 30, 1.6, 900, 3, 1.5, { grav: 10, startOpacity: 0.8 });
+  for (let i = 0; i < 6; i++) {
+    spawnPuff(x + (Math.random() - 0.5) * 10, 10 + Math.random() * 8, z + (Math.random() - 0.5) * 10,
+      i % 2 ? 0x565656 : 0x6c6c6c, 3.5 + Math.random() * 3, {
+        vy: 26 + Math.random() * 24,
+        grow: 3.4,
+        life: 800 + Math.random() * 500,
+        opacity: 0.5,
+        am: 16
+      });
+  }
 }
 
 // Рикошет: снаряд не пробил преграду
@@ -2962,8 +3080,40 @@ function spawnParticles(x, y, z, count, colors, speed, upBias, life, size, grow,
   }
 }
 
+// Мягкий клуб дыма/искры: спрайт с градиентной прозрачностью, клубится, растёт и тает
+function spawnPuff(x, y, z, color, size, opts) {
+  if (!settingsState.effects) return null;
+  const mat = new THREE.SpriteMaterial({
+    map: softPuffTex,
+    color,
+    transparent: true,
+    depthWrite: false,
+    opacity: opts && opts.opacity !== undefined ? opts.opacity : 0.6
+  });
+  if (opts && opts.blend) mat.blending = THREE.AdditiveBlending;
+  const sp = new THREE.Sprite(mat);
+  sp.position.set(x, y, z);
+  sp.scale.setScalar(size);
+  scene.add(sp);
+  particles.push({
+    mesh: sp,
+    vx: opts.vx || 0,
+    vy: opts.vy || 0,
+    vz: opts.vz || 0,
+    grav: opts && opts.grav !== undefined ? opts.grav : 20,
+    grow: opts && opts.grow !== undefined ? opts.grow : 2.5,
+    born: performance.now(),
+    life: (opts && opts.life) || 800,
+    ph: Math.random() * Math.PI * 2,
+    fr: 1.5 + Math.random() * 1.5,
+    am: opts && opts.am !== undefined ? opts.am : 12,
+    startOpacity: mat.opacity
+  });
+  return sp;
+}
+
 // Лимит частиц: старые удаляются, чтобы не накапливались
-const MAX_PARTICLES = 800;
+const MAX_PARTICLES = 1000;
 
 function updateParticles(dt, now) {
   if (particles.length > MAX_PARTICLES) {
