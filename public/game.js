@@ -940,119 +940,76 @@ window.addEventListener('mouseup', (e) => {
 window.addEventListener('contextmenu', (e) => e.preventDefault()); // отключаем контекстное меню ПКМ
 
 // ---------------------------------------------------------------------------
-// РАДАР: видны только танки, замеченные в обзор
-// (конус обзора по башне + линия видимости + удержание метки)
+// МИНИ-КАРТА: вся карта сверху — препятствия, бонусы, батуты и все танки
 // ---------------------------------------------------------------------------
-const radar = document.getElementById('radar');
-const radarCtx = radar.getContext('2d');
-const RADAR_SIZE = 220;      // размер канваса в px
-const RADAR_RADIUS = 105;    // радиус круга в px
-const RADAR_RANGE = 800;     // дальность радара в юнитах мира
-const SPOT_CONE = Math.PI / 4; // половинный угол конуса обзора (45°)
-const SPOT_HOLD_MS = 5000;   // метка висит 5 сек после потери из виду
-const spottedTanks = new Map(); // id -> lastSeen (performance.now())
-let lastRadarDraw = 0;
+const minimap = document.getElementById('minimap');
+const mmCtx = minimap.getContext('2d');
+const MM_SIZE = 220;   // размер канваса в px
+let lastMMDraw = 0;
 
-// Есть ли препятствие между точками (упавшие деревья не мешают)
-function isObstacleBetween(x0, z0, x1, z1) {
-  const dx = x1 - x0, dz = z1 - z0;
-  const dist = Math.sqrt(dx * dx + dz * dz);
-  const steps = Math.max(1, Math.floor(dist / 40));
-  for (let s = 1; s < steps; s++) {
-    const t = s / steps;
-    const px = x0 + dx * t, pz = z0 + dz * t;
-    for (let i = 0; i < obstaclesData.length; i++) {
-      const o = obstaclesData[i];
-      if (o.type === 'tree') {
-        const tm = treeMeshes.get(i);
-        if (!tm || tm.fallen) continue; // упавшее дерево не скрывает
-      }
-      if (px >= o.x && px <= o.x + o.w && pz >= o.z && pz <= o.z + o.d) return true;
+function drawMinimap(now) {
+  if (now - lastMMDraw < 50) return; // ~20 кадров/сек
+  lastMMDraw = now;
+
+  const scale = world.width / MM_SIZE; // юниты мира на пиксель
+  mmCtx.clearRect(0, 0, MM_SIZE, MM_SIZE);
+
+  // фон
+  mmCtx.fillStyle = 'rgba(8, 20, 10, 0.75)';
+  mmCtx.fillRect(0, 0, MM_SIZE, MM_SIZE);
+
+  // границы мира
+  mmCtx.strokeStyle = 'rgba(255, 90, 77, 0.8)';
+  mmCtx.lineWidth = 2;
+  mmCtx.strokeRect(1, 1, MM_SIZE - 2, MM_SIZE - 2);
+
+  // препятствия и деревья
+  obstaclesData.forEach((o, i) => {
+    if (o.type === 'tree') {
+      const tm = treeMeshes.get(i);
+      if (tm && tm.fallen) return; // упавшее дерево не показываем
+      mmCtx.fillStyle = 'rgba(47, 138, 60, 0.85)';
+      mmCtx.fillRect(o.x / scale - 1.5, o.z / scale - 1.5, 3, 3);
+      return;
     }
-  }
-  return false;
-}
-
-function updateSpotting(players, now) {
-  const me = players.find(p => p.id === selfId);
-  if (!me || !me.alive) return;
-  players.forEach(p => {
-    if (p.id === selfId || !p.alive) return;
-    const dx = p.x - me.x, dz = p.z - me.z;
-    if (Math.sqrt(dx * dx + dz * dz) > RADAR_RANGE) return;
-
-    // танк внутри конуса обзора башни
-    let diff = Math.abs(Math.atan2(dx, dz) - me.turretAngle);
-    while (diff > Math.PI) diff = Math.abs(diff - Math.PI * 2);
-    if (diff > SPOT_CONE) return;
-
-    if (isObstacleBetween(me.x, me.z, p.x, p.z)) return;
-
-    spottedTanks.set(p.id, now);
+    mmCtx.fillStyle = 'rgba(150, 150, 150, 0.9)';
+    mmCtx.fillRect(o.x / scale, o.z / scale, o.w / scale, o.d / scale);
   });
-}
 
-function drawRadar(now) {
-  if (now - lastRadarDraw < 50) return; // ~20 кадров/сек
-  lastRadarDraw = now;
-
-  const cx = RADAR_SIZE / 2, cy = RADAR_SIZE / 2;
-  radarCtx.clearRect(0, 0, RADAR_SIZE, RADAR_SIZE);
-
-  // фон и кольца
-  radarCtx.fillStyle = 'rgba(8, 20, 10, 0.75)';
-  radarCtx.beginPath();
-  radarCtx.arc(cx, cy, RADAR_RADIUS, 0, Math.PI * 2);
-  radarCtx.fill();
-
-  radarCtx.strokeStyle = 'rgba(120, 255, 160, 0.25)';
-  radarCtx.lineWidth = 1;
-  [0.33, 0.66, 1].forEach(f => {
-    radarCtx.beginPath();
-    radarCtx.arc(cx, cy, RADAR_RADIUS * f, 0, Math.PI * 2);
-    radarCtx.stroke();
+  // батуты
+  (currentState.trampolines || []).forEach(t => {
+    mmCtx.strokeStyle = 'rgba(120, 255, 160, 0.9)';
+    mmCtx.lineWidth = 1.5;
+    mmCtx.beginPath();
+    mmCtx.arc(t.x / scale, t.z / scale, 3, 0, Math.PI * 2);
+    mmCtx.stroke();
   });
-  radarCtx.beginPath();
-  radarCtx.moveTo(cx - RADAR_RADIUS, cy);
-  radarCtx.lineTo(cx + RADAR_RADIUS, cy);
-  radarCtx.moveTo(cx, cy - RADAR_RADIUS);
-  radarCtx.lineTo(cx, cy + RADAR_RADIUS);
-  radarCtx.stroke();
 
-  const me = currentState.players.find(p => p.id === selfId);
+  // бонусы
+  (currentState.pickups || []).forEach(pk => {
+    mmCtx.fillStyle = pk.type === 'heal' ? '#27ae60' : pk.type === 'speed' ? '#f1c40f' : '#e74c3c';
+    mmCtx.fillRect(pk.x / scale - 2, pk.z / scale - 2, 4, 4);
+  });
 
-  // метки замеченных танков
+  // игроки
   currentState.players.forEach(p => {
-    if (p.id === selfId || !p.alive) return;
-    const seen = spottedTanks.get(p.id);
-    if (seen === undefined || now - seen > SPOT_HOLD_MS) return;
-    if (!me) return;
-    const dx = (p.x - me.x) / RADAR_RANGE * RADAR_RADIUS;
-    const dz = (p.z - me.z) / RADAR_RANGE * RADAR_RADIUS;
-    if (Math.hypot(dx, dz) > RADAR_RADIUS) return;
-    radarCtx.fillStyle = p.color;
-    radarCtx.beginPath();
-    radarCtx.arc(cx + dx, cy + dz, 6, 0, Math.PI * 2);
-    radarCtx.fill();
-    radarCtx.strokeStyle = 'rgba(255,255,255,0.7)';
-    radarCtx.lineWidth = 1.5;
-    radarCtx.stroke();
+    if (!p.alive) return;
+    const px = p.x / scale, pz = p.z / scale;
+    const isMe = p.id === selfId;
+    mmCtx.fillStyle = isMe ? '#ffffff' : p.color;
+    mmCtx.beginPath();
+    mmCtx.arc(px, pz, isMe ? 4 : 3, 0, Math.PI * 2);
+    mmCtx.fill();
+    if (isMe) {
+      // стрелка по направлению башни
+      mmCtx.strokeStyle = '#ffffff';
+      mmCtx.lineWidth = 1.5;
+      mmCtx.beginPath();
+      mmCtx.moveTo(px, pz);
+      mmCtx.lineTo(px + Math.sin(p.turretAngle) * 9, pz + Math.cos(p.turretAngle) * 9);
+      mmCtx.stroke();
+    }
   });
-
-  // сам игрок — стрелка по направлению башни
-  if (me && me.alive) {
-    radarCtx.save();
-    radarCtx.translate(cx, cy);
-    radarCtx.rotate(Math.PI - me.turretAngle);
-    radarCtx.fillStyle = '#ffffff';
-    radarCtx.beginPath();
-    radarCtx.moveTo(0, -12);
-    radarCtx.lineTo(6, 8);
-    radarCtx.lineTo(-6, 8);
-    radarCtx.closePath();
-    radarCtx.fill();
-    radarCtx.restore();
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2720,8 +2677,7 @@ function animate() {
     updateScopeInfo();
     updateArtilleryVisuals(now);
     updateFallingTrees(now);
-    updateSpotting(players, now);
-    drawRadar(now);
+    drawMinimap(now);
     updateCamera(players);
   }
 
