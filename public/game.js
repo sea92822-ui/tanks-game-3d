@@ -165,6 +165,8 @@ function initSettingsUI() {
     shotSound.volume = settingsState.volume;
     explosionSound.volume = settingsState.volume;
     penetrationSound.volume = settingsState.volume;
+    hitMeSound.volume = settingsState.volume;
+    deathSound.volume = settingsState.volume;
     engineIdleSound.volume = settingsState.volume * 0.25;
     engineMoveSound.volume = settingsState.volume * 0.5;
   });
@@ -828,6 +830,8 @@ function connectToServer(nickname, color) {
     playSound3D(explosionSound, data.x, data.z);
     // звук пробития слышит только тот, кто попал
     if (data.ownerId === selfId) playPenetrationSound();
+    // попадание по моему танку
+    if (data.id === selfId) playHitMeSound();
     // всплывающий урон у танка
     if (data.damage > 0) showDamageText(data.x + (Math.random() - 0.5) * 24, data.z + (Math.random() - 0.5) * 24, '-' + data.damage, '#ff5a4d', 21);
     if (data.barrel) breakOffBarrel(data.id);
@@ -1756,6 +1760,7 @@ function checkDeathScreen() {
     deathShownAt = Date.now();
     deathOverlay.classList.remove('hidden');
     exitScope();
+    playDeathSound();
   }
   if (me.alive && !wasAlive) {
     deathOverlay.classList.add('hidden');
@@ -2473,6 +2478,34 @@ function playPenetrationSound() {
   try {
     penetrationSound.currentTime = 0;
     const p = penetrationSound.play();
+    if (p) p.catch(() => {});
+  } catch (e) { /* ignore */ }
+}
+
+// Звук попадания по моему танку
+const hitMeSound = new Audio('1.mp3');
+hitMeSound.preload = 'auto';
+hitMeSound.load();
+hitMeSound.volume = settingsState.volume;
+
+function playHitMeSound() {
+  try {
+    hitMeSound.currentTime = 0;
+    const p = hitMeSound.play();
+    if (p) p.catch(() => {});
+  } catch (e) { /* ignore */ }
+}
+
+// Звук уничтожения моего танка
+const deathSound = new Audio('tank-unichtozhen.mp3');
+deathSound.preload = 'auto';
+deathSound.load();
+deathSound.volume = settingsState.volume;
+
+function playDeathSound() {
+  try {
+    deathSound.currentTime = 0;
+    const p = deathSound.play();
     if (p) p.catch(() => {});
   } catch (e) { /* ignore */ }
 }
