@@ -5,7 +5,7 @@
   <link rel="icon" href="data:,"> <!-- отключает запрос favicon.ico (404 в консоли) -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Танчики 3D Online</title>
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
 
@@ -53,6 +53,16 @@
     <span id="tsBlue" class="ts tsBlue">0 Синие 🔵</span>
     <span id="tsToWin">до 10</span>
   </div>
+
+  <!-- Захват центра -->
+  <div id="captureHud" class="hidden">
+    <div id="captureBar">
+      <div id="captureBarRed"></div>
+      <div id="captureBarBlue"></div>
+    </div>
+    <div id="captureLabel">Центр</div>
+  </div>
+  <div id="captureToast" class="hidden"></div>
 
   <!-- Баннер победы команды -->
   <div id="matchBanner" class="hidden"></div>
@@ -192,6 +202,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="vendor/GLTFLoader.js"></script>
   <script src="vendor/RoomEnvironment.js"></script>
-  <script src="game.js?v=23"></script>
+  <script src="game.js?v=24"></script>
 </body>
 </html>

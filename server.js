@@ -45,6 +45,14 @@ const RESPAWN_DELAY_MS = 3500;
 const SPAWN_PROTECT_MS = 3000;
 const MAX_HP = 100;
 const KILLS_FOR_ROULETTE = 3;
+
+// Захват центра: чья команда держит на точке больше танков — та захватывает.
+// Каждый захват приносит очко (как фраг). 1 танк в перевесе — 10 сек, 2 — 5 сек, 3+ — 3.3 сек
+const CAPTURE_RADIUS = 110;
+const CAPTURE_RATE_PER_TANK = 10;   // %/сек за каждый танк перевеса
+const CAPTURE_MAX = 100;
+const capture = { team: -1, progress: 0 }; // team: -1 нейтрален, 0/1 — владелец; progress: знак = кто захватывает
+
 let OBSTACLES = [];
 let TRAMPOLINES = [];
 let PICKUP_POSITIONS = [];
@@ -94,6 +102,8 @@ function resetWorld(size) {
 
   teamScore = [0, 0];
   matchWinner = null;
+  capture.team = -1;
+  capture.progress = 0;
   if (typeof io !== 'undefined') io.emit('matchReset', { score: teamScore });
 }
 
@@ -698,6 +708,7 @@ function tick() {
   }
 
   updateBullets(dt, now);
+  updateCapture(dt);
   updatePickups(now);
   updateArtillery(now);
   broadcastState();
@@ -1163,6 +1174,55 @@ function fireBullet(p) {
   }
 }
 
+// Очки команде + проверка победы (используется и за фраги, и за захваты)
+function addScore(team, now) {
+  teamScore[team] += 1;
+  if (matchWinner === null && teamScore[team] >= KILLS_TO_WIN) {
+    matchWinner = team;
+    matchWinnerAt = now;
+    io.emit('matchEnd', { winner: matchWinner, score: [teamScore[0], teamScore[1]], names: TEAM_NAMES });
+    io.emit('chatMsg', { system: true, text: `🏆 Победа команды «${TEAM_NAMES[matchWinner]}» со счётом ${teamScore[0]} : ${teamScore[1]}!` });
+  }
+}
+
+// Захват центральной точки: больше танков в зоне → захватываешь
+function updateCapture(dt) {
+  const cx = WORLD.width / 2, cz = WORLD.depth / 2;
+  let c0 = 0, c1 = 0;
+  for (const id in players) {
+    const p = players[id];
+    if (!p.alive) continue;
+    if (Math.hypot(p.x - cx, p.z - cz) < CAPTURE_RADIUS) {
+      if (p.team === 0) c0++; else c1++;
+    }
+  }
+  const diff = c0 - c1;
+
+  if (diff === 0) {
+    // ничья на точке: прогресс тает к нулю
+    if (capture.progress !== 0) {
+      const decay = 4 * dt;
+      capture.progress = Math.abs(capture.progress) <= decay ? 0 : capture.progress - Math.sign(capture.progress) * decay;
+    }
+    return;
+  }
+
+  const leader = diff > 0 ? 0 : 1;
+  // владелец держит точку большинством — прогресса нет; остальные могут отобрать
+  if (capture.team === leader && capture.progress === 0) return;
+
+  const rate = CAPTURE_RATE_PER_TANK * Math.min(Math.abs(diff), 3);
+  capture.progress += (diff > 0 ? 1 : -1) * rate * dt;
+
+  if (Math.abs(capture.progress) >= CAPTURE_MAX) {
+    capture.team = leader;
+    capture.progress = 0;
+    addScore(leader, Date.now());
+    io.emit('capture', { team: leader, score: [teamScore[0], teamScore[1]] });
+    io.emit('chatMsg', { system: true, text: `🏁 Центр захвачен командой «${TEAM_NAMES[leader]}»!` });
+  }
+}
+
 function updateBullets(dt, now) {
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i];
@@ -1403,13 +1463,7 @@ function dealDamage(target, amount, attackerId, x, z, bullet, now) {
       }
 
       // Командный счёт: фраг засчитывается команде стрелка
-      teamScore[attacker.team] += 1;
-      if (matchWinner === null && teamScore[attacker.team] >= KILLS_TO_WIN) {
-        matchWinner = attacker.team;
-        matchWinnerAt = now;
-        io.emit('matchEnd', { winner: matchWinner, score: [teamScore[0], teamScore[1]], names: TEAM_NAMES });
-        io.emit('chatMsg', { system: true, text: `🏆 Победа команды «${TEAM_NAMES[matchWinner]}» со счётом ${teamScore[0]} : ${teamScore[1]}!` });
-      }
+      addScore(attacker.team, now);
 
       if (attacker.killsSinceUpgrade >= KILLS_FOR_ROULETTE) {
         attacker.killsSinceUpgrade = 0;
@@ -1480,6 +1534,7 @@ function broadcastState() {
     trampolines: TRAMPOLINES,
     trees: treesState,
     teams: { score: teamScore, toWin: KILLS_TO_WIN, winner: matchWinner, names: TEAM_NAMES },
+    capture: { team: capture.team, progress: Math.round(capture.progress), radius: CAPTURE_RADIUS },
   });
 }
 

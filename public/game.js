@@ -499,6 +499,40 @@ function buildGround() {
 }
 
 // ---------------------------------------------------------------------------
+// ЗАХВАТ ЦЕНТРА: визуал точки (кольцо зоны + шест с флагом)
+// ---------------------------------------------------------------------------
+const CAPTURE_RADIUS = 110;
+let captureFlagMat = null;
+
+function buildCaptureZone() {
+  const cx = world.width / 2, cz = world.depth / 2;
+
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(CAPTURE_RADIUS - 7, CAPTURE_RADIUS + 7, 64),
+    new THREE.MeshBasicMaterial({ color: 0xffd75e, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(cx, 0.5, cz);
+  scene.add(ring);
+  worldMeshes.push(ring);
+
+  const pole = new THREE.Mesh(
+    new THREE.CylinderGeometry(3, 5, 60, 8),
+    new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 0.6, metalness: 0.3 })
+  );
+  pole.position.set(cx, 30, cz);
+  pole.castShadow = true;
+  scene.add(pole);
+  worldMeshes.push(pole);
+
+  captureFlagMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.7, side: THREE.DoubleSide });
+  const flag = new THREE.Mesh(new THREE.BoxGeometry(36, 22, 1.6), captureFlagMat);
+  flag.position.set(cx + 19, 48, cz);
+  scene.add(flag);
+  worldMeshes.push(flag);
+}
+
+// ---------------------------------------------------------------------------
 // ДЕРЕВЬЯ: сносятся танком, следят за состоянием с сервера
 // ---------------------------------------------------------------------------
 const treeMeshes = new Map();   // index -> { group, fallen }
@@ -1230,6 +1264,7 @@ function connectToServer(nickname, color) {
     maxHp = data.maxHp;
     myTeam = data.team;
     buildGround();
+    buildCaptureZone();
     buildObstacles();
   });
 
@@ -1239,6 +1274,7 @@ function connectToServer(nickname, color) {
     obstaclesData = data.obstacles;
     clearWorld();
     buildGround();
+    buildCaptureZone();
     buildObstacles();
     applyFogForWorld();
   });
@@ -1256,6 +1292,14 @@ function connectToServer(nickname, color) {
     document.getElementById('matchBanner').className = 'hidden';
   });
 
+  // Захват центра завершён — тост + цвет флага
+  socket.on('capture', (data) => {
+    const toast = document.getElementById('captureToast');
+    toast.textContent = `🏁 Центр захвачен командой «${data.team === 0 ? 'Красные' : 'Синие'}»! Счёт ${data.score[0]} : ${data.score[1]}`;
+    toast.className = 'show';
+    setTimeout(() => { toast.className = 'hidden'; }, 2700);
+  });
+
   socket.on('state', (state) => {
     stateBuffer.push({ time: Date.now(), state });
     const cutoff = Date.now() - RENDER_DELAY;
@@ -1269,6 +1313,7 @@ function connectToServer(nickname, color) {
     }
     downTreeIdx = new Set((state.trees || []).filter(t => !t.standing).map(t => t.i));
     updateHUD();
+    updateCaptureHud();
     updateLeaderboard();
     checkDeathScreen();
     ensureTrampolines(state.trampolines);
@@ -1509,6 +1554,19 @@ function drawMinimap(now) {
     mmCtx.fillStyle = pk.type === 'heal' ? '#27ae60' : pk.type === 'speed' ? '#f1c40f' : '#e74c3c';
     mmCtx.fillRect(pk.x / scale - 2, pk.z / scale - 2, 4, 4);
   });
+
+  // точка захвата (центр карты)
+  const mc = { x: (world.width / 2) / scale, z: (world.depth / 2) / scale };
+  mmCtx.strokeStyle = (currentState.capture && currentState.capture.team === 0) ? '#e74c3c'
+    : (currentState.capture && currentState.capture.team === 1) ? '#5b9dff' : '#ffd75e';
+  mmCtx.lineWidth = 1.5;
+  mmCtx.beginPath();
+  mmCtx.arc(mc.x, mc.z, 5, 0, Math.PI * 2);
+  mmCtx.stroke();
+  mmCtx.fillStyle = 'rgba(255, 215, 94, 0.9)';
+  mmCtx.beginPath();
+  mmCtx.arc(mc.x, mc.z, 1.8, 0, Math.PI * 2);
+  mmCtx.fill();
 
   // игроки: цвет точки = команда (красные/синие), своя — белая
   currentState.players.forEach(p => {
@@ -1952,6 +2010,41 @@ function updateHUD() {
 }
 
 // ---------------------------------------------------------------------------
+// Захват центра: прогресс-бар, подпись, цвет флага
+// ---------------------------------------------------------------------------
+let lastCaptureHudRender = 0;
+function updateCaptureHud() {
+  const now = Date.now();
+  if (now - lastCaptureHudRender < 100) return;
+  lastCaptureHudRender = now;
+
+  const hud = document.getElementById('captureHud');
+  const red = document.getElementById('captureBarRed');
+  const blue = document.getElementById('captureBarBlue');
+  const label = document.getElementById('captureLabel');
+  const cap = currentState.capture;
+  if (!hud || !cap) return;
+
+  if (cap.progress === 0) {
+    hud.classList.remove('hidden');
+    red.style.width = '0%';
+    blue.style.width = '0%';
+    label.textContent = cap.team === -1 ? 'Центр: спорная точка' : `Центр: захвачен ${cap.team === 0 ? 'Красными' : 'Синими'}`;
+  } else if (cap.progress > 0) {
+    red.style.width = Math.min(100, cap.progress) + '%';
+    blue.style.width = '0%';
+    label.textContent = 'Центр: захватывают Красные';
+  } else {
+    red.style.width = '0%';
+    blue.style.width = Math.min(100, -cap.progress) + '%';
+    label.textContent = 'Центр: захватывают Синие';
+  }
+  if (captureFlagMat) {
+    captureFlagMat.color.setHex(cap.team === -1 ? 0xcccccc : cap.team === 0 ? 0xc0392b : 0x2471a3);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Командный счёт (Team Deathmatch): красные : синие, до KILLS_TO_WIN
 // ---------------------------------------------------------------------------
 let lastTeamScoreRender = 0;
@@ -1971,7 +2064,7 @@ function updateTeamScore() {
   else red.classList.remove('my');
   if (myTeam === 1) blue.classList.add('my');
   else blue.classList.remove('my');
-  toWin.textContent = `до ${teams.toWin}`;
+  toWin.textContent = `до ${teams.toWin} очков`;
   const ts = document.getElementById('teamScore');
   if (ts) ts.style.display = teams.score ? 'flex' : 'none';
 }
