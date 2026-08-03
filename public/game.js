@@ -106,18 +106,9 @@ let isSunUp = true;
 let isNight = false;
 let shadowsDesired = true;
 
-// Фары: прожекторы на башне, включаются клавишей F (ночью без них темно)
+// Фары: прожекторы на корпусе, включаются клавишей F (ночью без них темно)
 let headlightsOn = false;
 const HEADLIGHT_COLOR = 0xfff3cc;
-const HEADLIGHT_BEAM_MAT = new THREE.MeshBasicMaterial({
-  color: HEADLIGHT_COLOR,
-  transparent: true,
-  opacity: 0.13,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-  fog: true,
-  side: THREE.DoubleSide,
-});
 // Контактная тень под танком (круг на земле) — видна всегда, даже без динамических теней
 const BLOB_SHADOW_MAT = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.32, depthWrite: false });
 
@@ -1109,16 +1100,16 @@ function createTankMesh(color, modelId) {
   group.userData.turretY = c.turretY;
   group.userData.barrelTipLocal = new THREE.Vector3(0, 18, 34); // точка для камеры прицела
 
-  // Фары: два прожектора на передней части башни (вращаются вместе с башней)
+  // Фары: два прожектора на передней части корпуса (смотрят туда, куда развёрнут танк)
   const headlights = [];
-  const hlY = 5, hlZ = c.barZ + 6, hlOff = c.midR1 * 0.8;
+  const hlY = c.hullY + 1, hlZ = c.hullL / 2 + 1, hlOff = c.midR1 * 0.7;
   [-1, 1].forEach(side => {
     const spot = new THREE.SpotLight(HEADLIGHT_COLOR, 3, 800, 0.42, 0.4, 1);
     spot.position.set(side * hlOff, hlY, hlZ);
     const tgt = new THREE.Object3D();
     tgt.position.set(side * hlOff, hlY, hlZ + 120);
-    turretPivot.add(spot);
-    turretPivot.add(tgt);
+    group.add(spot);
+    group.add(tgt);
     spot.target = tgt;
     spot.castShadow = settingsState.quality === 'high';
     spot.shadow.mapSize.set(512, 512);
@@ -1127,13 +1118,7 @@ function createTankMesh(color, modelId) {
     spot.shadow.bias = -0.0015;
     spot.shadow.normalBias = 1.2;
     spot.visible = false;
-    // Луч света (визуальный конус), виден только ночью
-    const beam = new THREE.Mesh(new THREE.ConeGeometry(55, 200, 20, 1, true), HEADLIGHT_BEAM_MAT);
-    beam.rotation.x = Math.PI / 2;
-    beam.position.set(side * hlOff, hlY, hlZ + 100);
-    beam.visible = false;
-    turretPivot.add(beam);
-    headlights.push({ spot, beam });
+    headlights.push({ spot });
   });
   group.userData.headlights = headlights;
 
@@ -1606,7 +1591,6 @@ function applyHeadlightState(mesh) {
   if (!hl) return;
   hl.forEach(h => {
     h.spot.visible = headlightsOn;
-    h.beam.visible = headlightsOn && isNight;
   });
 }
 
