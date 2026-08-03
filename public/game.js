@@ -3006,12 +3006,22 @@ const MAX_WRECKS = 15;
 const WRECK_LIFE_MS = 30000;
 
 function keepAsWreck(mesh) {
-  wrecks.push({ mesh, born: performance.now() });
+  // Обломок остаётся на карте и отбрасывает тени на землю и танки
+  mesh.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  // Тёплый свет горящего остова: подсвечивает землю и танки рядом
+  let light = null;
+  if (settingsState.effects && wrecks.filter(w => w.light).length < 6) {
+    light = new THREE.PointLight(0xff7a2a, 3, 100, 2);
+    light.position.set(mesh.position.x, 9, mesh.position.z);
+    scene.add(light);
+  }
+  wrecks.push({ mesh, light, born: performance.now() });
 }
 
 function removeWreck(i) {
   const w = wrecks[i];
   scene.remove(w.mesh);
+  if (w.light) scene.remove(w.light);
   w.mesh.traverse(o => { if (o.isMesh) { o.geometry.dispose?.(); o.material.dispose?.(); } });
   wreckedTimers.delete(w.mesh.id);
   wrecks.splice(i, 1);
@@ -3575,6 +3585,7 @@ const flyingBits = [];
 const BIT_LIFE_MS = 6000;
 
 function launchBit(mesh, power) {
+  mesh.traverse(o => { if (o.isMesh) o.castShadow = true; });
   flyingBits.push({
     mesh,
     vx: (Math.random() - 0.5) * power,
@@ -3725,6 +3736,7 @@ function spawnDebris(x, z, tankColor) {
       const s = 2.5 + Math.random() * 4.5;
       mesh = new THREE.Mesh(new THREE.BoxGeometry(s, s * 0.8, s * 0.7), new THREE.MeshBasicMaterial({ color: col }));
     }
+    mesh.castShadow = true; // летящие обломки отбрасывают тени
     mesh.position.set(x + (Math.random() - 0.5) * 16, 12 + Math.random() * 14, z + (Math.random() - 0.5) * 16);
     scene.add(mesh);
     flyingBits.push({
@@ -3756,6 +3768,10 @@ function updateWreckedFires(now, dt) {
 
     const px = mesh.position.x + (Math.random() - 0.5) * 10;
     const pz = mesh.position.z + (Math.random() - 0.5) * 10;
+
+    // Свет от огня остова мерцает в такт языкам пламени
+    const wr = wrecks.find(w => w.mesh === mesh);
+    if (wr && wr.light) wr.light.intensity = 1.8 + Math.random() * 2.6;
 
     // дым
     const mat = new THREE.MeshBasicMaterial({ color: 0x666666, transparent: true });
