@@ -51,6 +51,7 @@ function createClouds() {
 createClouds();
 
 function updateClouds(dt) {
+  if (!settingsState.clouds) return; // облака выключены в настройках
   clouds.forEach(c => {
     c.group.position.x += c.speed * dt;
     if (c.group.position.x > 6100) c.group.position.x = -200;
@@ -98,6 +99,26 @@ sunLight.shadow.camera.bottom = -800;
 sunLight.shadow.mapSize.set(2048, 2048);
 scene.add(sunLight);
 scene.add(sunLight.target); // тени следуют за игроком
+
+// Флаги времени суток: нужны для фар и отключения теней ночью
+let isSunUp = true;
+let isNight = false;
+let shadowsDesired = true;
+
+// Фары: прожекторы на башне, включаются клавишей F (ночью без них темно)
+let headlightsOn = false;
+const HEADLIGHT_COLOR = 0xfff3cc;
+const HEADLIGHT_BEAM_MAT = new THREE.MeshBasicMaterial({
+  color: HEADLIGHT_COLOR,
+  transparent: true,
+  opacity: 0.13,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  fog: true,
+  side: THREE.DoubleSide,
+});
+// Контактная тень под танком (круг на земле) — видна всегда, даже без динамических теней
+const BLOB_SHADOW_MAT = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.32, depthWrite: false });
 
 // ---------------------------------------------------------------------------
 // НЕБО: градиент от зенита к горизонту, следует за камерой
@@ -151,13 +172,13 @@ scene.fog = new THREE.Fog(0xf2c9a0, 2500, 6200);
 // ---------------------------------------------------------------------------
 const DAY_CYCLE_SECONDS = 600; // 10 минут на полный круг
 const TIME_KEYFRAMES = [
-  { t: 0.00, name: '🌙 Ночь',    top: 0x060c1e, mid: 0x0e1830, bot: 0x16233f, fog: 0x0a1424, ambC: 0x2a3860, ambI: 0.60, hemiC: 0x2e4266, hemiG: 0x0a1522, hemiI: 0.30, sunC: 0x8fa8d8, sunI: 0.20, sunEl: -0.55, stars: 1.0 },
+  { t: 0.00, name: '🌙 Ночь',    top: 0x060c1e, mid: 0x0e1830, bot: 0x16233f, fog: 0x0a1424, ambC: 0x1c2a4e, ambI: 0.13, hemiC: 0x2e4266, hemiG: 0x0a1522, hemiI: 0.06, sunC: 0xaabfdb, sunI: 0.05, sunEl: -0.55, stars: 1.0 },
   { t: 0.20, name: '🌄 Утро',    top: 0x2e5da8, mid: 0xa8c8ef, bot: 0xffc9a0, fog: 0xf2c6a2, ambC: 0xfff0d8, ambI: 0.50, hemiC: 0xffd9b0, hemiG: 0x4a7a4a, hemiI: 0.42, sunC: 0xffd9a0, sunI: 0.95, sunEl: 0.30, stars: 0.0 },
   { t: 0.40, name: '🌞 День',    top: 0x1e4fa0, mid: 0x8fb8e8, bot: 0xf5b87e, fog: 0xf2c9a0, ambC: 0xcfe4ff, ambI: 0.32, hemiC: 0xffd9b0, hemiG: 0x2f5a2f, hemiI: 0.45, sunC: 0xffb070, sunI: 1.30, sunEl: 0.85, stars: 0.0 },
   { t: 0.60, name: '🌇 Вечер',   top: 0x2b4f8f, mid: 0xa79fc8, bot: 0xffa36a, fog: 0xefbe9e, ambC: 0xf4dcff, ambI: 0.42, hemiC: 0xffc9a0, hemiG: 0x3f5a3f, hemiI: 0.40, sunC: 0xffa050, sunI: 1.05, sunEl: 0.42, stars: 0.0 },
   { t: 0.75, name: '🌇 Закат',   top: 0x3a2a5e, mid: 0xd06a3c, bot: 0xff9a44, fog: 0xe88f5a, ambC: 0xffc8a0, ambI: 0.52, hemiC: 0xff9a5a, hemiG: 0x3a2a2a, hemiI: 0.50, sunC: 0xff7a2a, sunI: 1.20, sunEl: 0.10, stars: 0.05 },
-  { t: 0.90, name: '🌆 Сумерки', top: 0x101530, mid: 0x2c3a5e, bot: 0x5a4a6e, fog: 0x2c3350, ambC: 0x40506e, ambI: 0.55, hemiC: 0x4a5a8a, hemiG: 0x16202e, hemiI: 0.28, sunC: 0x8090c0, sunI: 0.22, sunEl: -0.12, stars: 0.7 },
-  { t: 1.00, name: '🌙 Ночь',    top: 0x060c1e, mid: 0x0e1830, bot: 0x16233f, fog: 0x0a1424, ambC: 0x2a3860, ambI: 0.60, hemiC: 0x2e4266, hemiG: 0x0a1522, hemiI: 0.30, sunC: 0x8fa8d8, sunI: 0.20, sunEl: -0.55, stars: 1.0 },
+  { t: 0.90, name: '🌆 Сумерки', top: 0x101530, mid: 0x2c3a5e, bot: 0x5a4a6e, fog: 0x2c3350, ambC: 0x303e58, ambI: 0.32, hemiC: 0x4a5a8a, hemiG: 0x16202e, hemiI: 0.15, sunC: 0x8090c0, sunI: 0.12, sunEl: -0.12, stars: 0.7 },
+  { t: 1.00, name: '🌙 Ночь',    top: 0x060c1e, mid: 0x0e1830, bot: 0x16233f, fog: 0x0a1424, ambC: 0x1c2a4e, ambI: 0.13, hemiC: 0x2e4266, hemiG: 0x0a1522, hemiI: 0.06, sunC: 0xaabfdb, sunI: 0.05, sunEl: -0.55, stars: 1.0 },
 ];
 
 // Звёзды: видны ночью и в сумерках, гаснут днём
@@ -243,6 +264,10 @@ function updateTimeOfDay(dt, players) {
   } else {
     sunDirNorm.copy(_sunDir);
   }
+  // Ночь: темно, тени от луны не считаем (свет почти нулевой), фары обязательны
+  isSunUp = _sunDir.y > 0.08;
+  isNight = _sunDir.y < 0.03;
+  sunLight.castShadow = shadowsDesired && isSunUp;
 
   // Индикатор фазы суток (обновляем раз в полсекунды)
   const nowMs = performance.now();
@@ -266,7 +291,7 @@ function setupEnvironment() {
 // ---------------------------------------------------------------------------
 // НАСТРОЙКИ ГРАФИКИ
 // ---------------------------------------------------------------------------
-const settingsState = { quality: 'high', shadows: true, effects: true, fov: 65, volume: 0.7 };
+const settingsState = { quality: 'high', shadows: true, clouds: true, shadowQuality: 'high', effects: true, fov: 65, volume: 0.7 };
 try {
   Object.assign(settingsState, JSON.parse(localStorage.getItem('tanksGraphics') || '{}'));
 } catch (e) { /* ignore */ }
@@ -281,8 +306,27 @@ function saveGraphicsSettings() {
 
 function applyGraphicsSettings() {
   const shadows = settingsState.shadows && settingsState.quality !== 'low';
+  shadowsDesired = shadows;
   renderer.shadowMap.enabled = shadows;
-  sunLight.castShadow = shadows;
+  sunLight.castShadow = shadows && isSunUp;
+  // Разрешение теней: низкое/среднее/высокое/ультра; ультра — самые чёткие (PCF + 8192)
+  const SHADOW_MAP_SIZE = { low: 1024, medium: 2048, high: 4096, ultra: 8192 };
+  const sq = settingsState.shadowQuality;
+  sunLight.shadow.mapSize.set(SHADOW_MAP_SIZE[sq] || 4096, SHADOW_MAP_SIZE[sq] || 4096);
+  if (sq === 'ultra') {
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    sunLight.shadow.radius = 2;
+  } else {
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    sunLight.shadow.radius = 0;
+  }
+  // Облака вкл/выкл
+  clouds.forEach(c => { c.group.visible = settingsState.clouds; });
+  // Тени от фар — только на высокой графике
+  tankMeshes.forEach(m => {
+    const hl = m.userData.headlights;
+    if (hl) hl.forEach(h => { h.spot.castShadow = settingsState.quality === 'high'; });
+  });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, QUALITY_PIXEL_RATIO[settingsState.quality]));
   renderer.setSize(window.innerWidth, window.innerHeight);
   if (settingsState.fov) {
@@ -297,6 +341,7 @@ function initSettingsUI() {
   const menuSettingsBtn = document.getElementById('menuSettingsBtn');
   const settingsPanel = document.getElementById('settingsPanel');
   const shadowsToggle = document.getElementById('shadowsToggle');
+  const cloudsToggle = document.getElementById('cloudsToggle');
   const effectsToggle = document.getElementById('effectsToggle');
   const fovSlider = document.getElementById('fovSlider');
   const volumeSlider = document.getElementById('volumeSlider');
@@ -327,6 +372,19 @@ function initSettingsUI() {
     saveGraphicsSettings();
     applyGraphicsSettings();
   });
+  cloudsToggle.addEventListener('change', () => {
+    settingsState.clouds = cloudsToggle.checked;
+    saveGraphicsSettings();
+    clouds.forEach(c => { c.group.visible = settingsState.clouds; });
+  });
+  document.querySelectorAll('[data-shadowq]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      settingsState.shadowQuality = btn.dataset.shadowq;
+      saveGraphicsSettings();
+      applyGraphicsSettings();
+      updateSettingsUI();
+    });
+  });
   effectsToggle.addEventListener('change', () => {
     settingsState.effects = effectsToggle.checked;
     saveGraphicsSettings();
@@ -350,7 +408,9 @@ function initSettingsUI() {
 
   function updateSettingsUI() {
     document.querySelectorAll('[data-quality]').forEach(b => b.classList.toggle('active', b.dataset.quality === settingsState.quality));
+    document.querySelectorAll('[data-shadowq]').forEach(b => b.classList.toggle('active', b.dataset.shadowq === settingsState.shadowQuality));
     shadowsToggle.checked = settingsState.shadows;
+    cloudsToggle.checked = settingsState.clouds;
     effectsToggle.checked = settingsState.effects;
     fovSlider.value = settingsState.fov;
     volumeSlider.value = Math.round(settingsState.volume * 100);
@@ -724,10 +784,17 @@ function ensureTrampolines(trampolines) {
 // МОДЕЛИ ТАНКОВ (косметика, открываются уровнями)
 // ---------------------------------------------------------------------------
 const TANK_MODELS = [
-  { id: 'medium', name: 'Тигр II', level: 1 },
-  { id: 'light',  name: 'Лёгкий',  level: 1 },
-  { id: 'heavy',  name: 'Т-90',    level: 1 },
+  { id: 'medium', name: 'Т-90', level: 1, stats: 'HP 95 · скорость ●●● · урон 20–60' },
+  { id: 'light',  name: 'Лёгкий',  level: 1, stats: 'HP 75 · скорость ●●●●● · урон ~15–45' },
+  { id: 'heavy',  name: 'Тяжёлый', level: 1, stats: 'HP 130 · скорость ●● · урон 15–40' },
 ];
+
+// Характеристики классов (должны совпадать со server.js MODEL_STATS)
+const MODEL_STATS_C = {
+  medium: { speedMult: 1.0, turnMult: 1.0 },
+  light:  { speedMult: 1.28, turnMult: 1.35 },
+  heavy:  { speedMult: 0.8, turnMult: 0.78 },
+};
 
 const TANK_MODEL_CFG = {
   medium: {
@@ -1027,12 +1094,47 @@ function createTankMesh(color, modelId) {
     }
   });
 
+  // Контактная тень под танком: тёмный круг на земле под корпусом
+  const blobShadow = new THREE.Mesh(new THREE.CircleGeometry(26, 32), BLOB_SHADOW_MAT);
+  blobShadow.rotation.x = -Math.PI / 2;
+  blobShadow.position.y = 0.55;
+  blobShadow.userData.blobShadow = true; // невидимость его не касается
+  group.add(blobShadow);
+
   group.userData.turretPivot = turretPivot;
   group.userData.barrel = barrel;
   group.userData.model = modelId || 'medium';
   group.userData.color = color;
   group.userData.turretY = c.turretY;
   group.userData.barrelTipLocal = new THREE.Vector3(0, 18, 34); // точка для камеры прицела
+
+  // Фары: два прожектора на передней части башни (вращаются вместе с башней)
+  const headlights = [];
+  const hlY = 5, hlZ = c.barZ + 6, hlOff = c.midR1 * 0.8;
+  [-1, 1].forEach(side => {
+    const spot = new THREE.SpotLight(HEADLIGHT_COLOR, 3, 800, 0.42, 0.4, 1);
+    spot.position.set(side * hlOff, hlY, hlZ);
+    const tgt = new THREE.Object3D();
+    tgt.position.set(side * hlOff, hlY, hlZ + 120);
+    turretPivot.add(spot);
+    turretPivot.add(tgt);
+    spot.target = tgt;
+    spot.castShadow = settingsState.quality === 'high';
+    spot.shadow.mapSize.set(512, 512);
+    spot.shadow.camera.near = 1;
+    spot.shadow.camera.far = 900;
+    spot.shadow.bias = -0.0015;
+    spot.shadow.normalBias = 1.2;
+    spot.visible = false;
+    // Луч света (визуальный конус), виден только ночью
+    const beam = new THREE.Mesh(new THREE.ConeGeometry(55, 200, 20, 1, true), HEADLIGHT_BEAM_MAT);
+    beam.rotation.x = Math.PI / 2;
+    beam.position.set(side * hlOff, hlY, hlZ + 100);
+    beam.visible = false;
+    turretPivot.add(beam);
+    headlights.push({ spot, beam });
+  });
+  group.userData.headlights = headlights;
 
   return group;
 }
@@ -1131,6 +1233,7 @@ try {
   selectedTeam = (saved === '0' || saved === '1') ? Number(saved) : null;
 } catch (e) { /* ignore */ }
 let myTeam = null; // команда, выданная сервером после join
+let isSpectator = false; // наблюдатель: без танка, свободная камера за боем
 
 function buildTeamPicker() {
   const wrap = document.getElementById('teamButtons');
@@ -1153,7 +1256,7 @@ function buildModelPicker() {
     b.type = 'button';
     b.className = 'modelBtn' + (selectedModel === m.id ? ' selected' : '');
     if (!modelAvailable(m.id)) b.classList.add('locked');
-    b.textContent = m.name + (m.level > 1 ? ` · Ур. ${m.level}` : '');
+    b.innerHTML = m.name + (m.level > 1 ? ` · Ур. ${m.level}` : '') + (m.stats ? `<span class="modelStats">${m.stats}</span>` : '');
     b.dataset.model = m.id;
     b.addEventListener('click', () => {
       if (!modelAvailable(m.id)) return;
@@ -1224,8 +1327,15 @@ function buildColorPicker() {
 buildColorPicker();
 updateXpUI();
 
+let wantsSpectate = false; // кнопка «Войти наблюдателем»
+const spectateBtn = document.getElementById('spectateBtn');
+
 nicknameInput.focus();
 startBtn.addEventListener('click', startGame);
+spectateBtn.addEventListener('click', () => {
+  wantsSpectate = true;
+  startGame();
+});
 nicknameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') startGame(); });
 
 // Запоминаем выбор «играть с ботами»
@@ -1254,7 +1364,7 @@ function connectToServer(nickname, color) {
   socket = io({ transports: ['websocket', 'polling'] }); // WebSocket — низкая задержка
 
   socket.on('connect', () => {
-    socket.emit('join', { nickname, color, model: selectedModel, team: selectedTeam, withBots: botsCheckbox.checked, botDifficulty: botDifficultySelect.value, botsCount: Number(botsCountSelect.value) });
+    socket.emit('join', { nickname, color, model: selectedModel, team: wantsSpectate ? -1 : selectedTeam, withBots: botsCheckbox.checked, botDifficulty: botDifficultySelect.value, botsCount: Number(botsCountSelect.value) });
   });
 
   socket.on('init', (data) => {
@@ -1263,6 +1373,8 @@ function connectToServer(nickname, color) {
     obstaclesData = data.obstacles;
     maxHp = data.maxHp;
     myTeam = data.team;
+    isSpectator = data.team === -1;
+    if (isSpectator) enterSpectateMode();
     buildGround();
     buildCaptureZone();
     buildObstacles();
@@ -1280,8 +1392,13 @@ function connectToServer(nickname, color) {
   });
 
   socket.on('matchEnd', (data) => {
-    const win = data.winner === myTeam;
     const banner = document.getElementById('matchBanner');
+    if (isSpectator) {
+      banner.className = 'show neutral';
+      banner.textContent = `🏁 Матч завершён ${data.score[0]} : ${data.score[1]} — победили ${data.names ? data.names[data.winner] : 'победители'}`;
+      return;
+    }
+    const win = data.winner === myTeam;
     banner.className = win ? 'show win' : 'show lose';
     banner.textContent = win
       ? '🏆 ПОБЕДА! Ваша команда выиграла ' + data.score[0] + ' : ' + data.score[1]
@@ -1348,6 +1465,16 @@ function connectToServer(nickname, color) {
     // всплывающий урон у танка
     if (data.damage > 0) showDamageText(data.x + (Math.random() - 0.5) * 24, data.z + (Math.random() - 0.5) * 24, '-' + data.damage, '#ff5a4d', 21);
     if (data.barrel) breakOffBarrel(data.id);
+    // Критическое попадание: текст над подбитым танком
+    if (data.crit) {
+      const critMap = {
+        tracks: { text: 'ГУСЕНИЦЫ!', color: '#ffb84d' },
+        turret: { text: 'БАШНЯ!', color: '#ff8d4d' },
+        ricochet: { text: 'РИКОШЕТ!', color: '#9fb4ff' },
+      };
+      const c = critMap[data.crit];
+      if (c) showDamageText(data.x, data.z, c.text, c.color, 24, 'critText');
+    }
   });
 
   socket.on('bulletBlocked', (data) => {
@@ -1433,7 +1560,7 @@ setInterval(() => {
 // ---------------------------------------------------------------------------
 // ВВОД: клавиатура
 // ---------------------------------------------------------------------------
-const keys = { forward: false, back: false, left: false, right: false, shooting: false, camLeft: false, camRight: false };
+const keys = { forward: false, back: false, left: false, right: false, shooting: false, camLeft: false, camRight: false, boost: false };
 
 window.addEventListener('keydown', (e) => {
   if (chatActive()) return; // пока печатаем — клавиши игры не работают
@@ -1448,6 +1575,9 @@ window.addEventListener('keydown', (e) => {
     case 'Digit2': setAmmo('he'); break;
     case 'KeyX': callArtillery(); break;
     case 'KeyT': chatInput.focus(); break;
+    case 'KeyF': toggleHeadlights(); break;
+    case 'Tab': e.preventDefault(); cycleSpectateTarget(); break;
+    case 'ShiftLeft': case 'ShiftRight': keys.boost = true; break;
   }
 });
 window.addEventListener('keyup', (e) => {
@@ -1458,8 +1588,34 @@ window.addEventListener('keyup', (e) => {
     case 'KeyD': case 'ArrowRight': keys.right = false; break;
     case 'KeyQ': keys.camLeft = false; break;
     case 'KeyE': keys.camRight = false; break;
+    case 'ShiftLeft': case 'ShiftRight': keys.boost = false; break;
   }
 });
+
+// Фары: включить/выключить прожекторы своего танка (клавиша F)
+function toggleHeadlights() {
+  if (isSpectator) return;
+  headlightsOn = !headlightsOn;
+  const mesh = tankMeshes.get(selfId);
+  if (mesh) applyHeadlightState(mesh);
+  updateNightHint();
+}
+
+function applyHeadlightState(mesh) {
+  const hl = mesh.userData.headlights;
+  if (!hl) return;
+  hl.forEach(h => {
+    h.spot.visible = headlightsOn;
+    h.beam.visible = headlightsOn && isNight;
+  });
+}
+
+function updateNightHint() {
+  const hint = document.getElementById('nightHint');
+  if (!hint) return;
+  const show = isNight && !headlightsOn && selfId && !isSpectator;
+  hint.classList.toggle('hidden', !show);
+}
 
 // ---------------------------------------------------------------------------
 // ВВОД: мышь и режим прицела от первого лица (Pointer Lock)
@@ -1475,6 +1631,13 @@ let mouseNDC = new THREE.Vector2(0, 0);
 // Обычный режим: наводим башню рейкастом мыши на землю
 window.addEventListener('mousemove', (e) => {
   if (isTouchGhost()) return;
+  if (isSpectator && specPointerLocked) {
+    // Наблюдатель: обзор по движению захваченной мыши
+    specCam.yaw -= e.movementX * 0.0022;
+    specCam.pitch -= e.movementY * 0.0022;
+    specCam.pitch = Math.max(-1.2, Math.min(1.2, specCam.pitch));
+    return;
+  }
   if (chatActive()) return; // не дёргаем башню, пока печатаем в чат
   if (isScoped) {
     // Pointer Lock режим: вращаем башню напрямую через движение мыши
@@ -1654,8 +1817,10 @@ document.getElementById('artyBtn').addEventListener('touchstart', (e) => {
   callArtillery();
 }, { passive: false });
 
-// Прицеливание касанием: правый палец по экрану — башня следует за точкой
-let touchAimId = -1;
+// Прицеливание касанием: палец по экрану — башня следует за точкой;
+// два пальца — поворот камеры (орбита) и пинч-зум
+const aimTouches = new Map(); // identifier -> { x, y }
+let gestureStart = null;      // начало жеста двумя пальцами
 let lastAimX = 0;
 let lastAimY = 0;
 let lastTouchEndAt = 0;
@@ -1664,36 +1829,58 @@ document.addEventListener('touchstart', (e) => {
   document.body.classList.add('touch');
   for (const t of e.changedTouches) {
     if (t.target.closest('#joyBase, #touchBtns, #settingsPanel, #settingsBtn, #leaderboard, #nicknameOverlay')) continue;
-    touchAimId = t.identifier;
+    aimTouches.set(t.identifier, { x: t.clientX, y: t.clientY });
     lastAimX = t.clientX;
     lastAimY = t.clientY;
+  }
+  if (aimTouches.size === 2 && !isScoped) {
+    const [a, b] = [...aimTouches.values()];
+    gestureStart = {
+      midX: (a.x + b.x) / 2, midY: (a.y + b.y) / 2,
+      dist: Math.max(30, Math.hypot(a.x - b.x, a.y - b.y)),
+      camOrbit0: camOrbit, camDist0: camDist,
+    };
   }
 }, { passive: true });
 
 document.addEventListener('touchmove', (e) => {
   for (const t of e.changedTouches) {
-    if (t.identifier !== touchAimId) continue;
-    if (isScoped) {
-      // в прицеле вращаем башню свайпом, как мышью при pointer lock
-      targetTurretAngle -= (t.clientX - lastAimX) * 0.005;
-      scopePitch -= (t.clientY - lastAimY) * 0.005;
-      scopePitch = Math.max(-0.35, Math.min(0.45, scopePitch));
-    } else {
-      // обычный режим: рейкаст из точки касания на землю
-      mouseNDC.x = (t.clientX / window.innerWidth) * 2 - 1;
-      mouseNDC.y = -(t.clientY / window.innerHeight) * 2 + 1;
-    }
-    lastAimX = t.clientX;
-    lastAimY = t.clientY;
+    const stored = aimTouches.get(t.identifier);
+    if (stored) { stored.x = t.clientX; stored.y = t.clientY; }
   }
+  if (aimTouches.size === 2 && gestureStart && !isScoped) {
+    // Жест двумя пальцами: сдвиг — орбита, щипок — зум камеры
+    const [a, b] = [...aimTouches.values()];
+    const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+    const dist = Math.max(30, Math.hypot(a.x - b.x, a.y - b.y));
+    camOrbit = gestureStart.camOrbit0 + (midX - gestureStart.midX) * 0.006;
+    setCamDist(Math.max(30, Math.min(160, gestureStart.camDist0 * gestureStart.dist / dist)));
+    return;
+  }
+  const first = aimTouches.values().next().value;
+  if (!first) return;
+  if (isScoped) {
+    // в прицеле вращаем башню свайпом, как мышью при pointer lock
+    targetTurretAngle -= (first.x - lastAimX) * 0.005;
+    scopePitch -= (first.y - lastAimY) * 0.005;
+    scopePitch = Math.max(-0.35, Math.min(0.45, scopePitch));
+  } else {
+    // обычный режим: рейкаст из точки касания на землю
+    mouseNDC.x = (first.x / window.innerWidth) * 2 - 1;
+    mouseNDC.y = -(first.y / window.innerHeight) * 2 + 1;
+  }
+  lastAimX = first.x;
+  lastAimY = first.y;
 }, { passive: true });
 
-document.addEventListener('touchend', (e) => {
+function endAimTouch(e) {
   lastTouchEndAt = Date.now();
-  for (const t of e.changedTouches) {
-    if (t.identifier === touchAimId) touchAimId = -1;
-  }
-});
+  for (const t of e.changedTouches) aimTouches.delete(t.identifier);
+  if (aimTouches.size < 2) gestureStart = null;
+}
+
+document.addEventListener('touchend', endAimTouch);
+document.addEventListener('touchcancel', endAimTouch);
 
 // Подавляем синтетические mouse-события после касаний (чтобы не стрелять зря)
 function isTouchGhost() { return Date.now() - lastTouchEndAt < 700; }
@@ -1702,15 +1889,19 @@ function isTouchGhost() { return Date.now() - lastTouchEndAt < 700; }
 let camOrbit = 0;
 let camDist = 75;
 let camHeight = 40;
+function setCamDist(v) {
+  camDist = v;
+  camHeight = 22 + (camDist - 30) * 0.32;
+}
 window.addEventListener('wheel', (e) => {
   if (e.target.closest('#settingsPanel, #settingsBtn')) return;
-  camDist = Math.max(30, Math.min(160, camDist + Math.sign(e.deltaY) * 8));
-  camHeight = 22 + (camDist - 30) * 0.32;
+  setCamDist(Math.max(30, Math.min(160, camDist + Math.sign(e.deltaY) * 8)));
 }, { passive: true });
 
 const scopeOverlay = document.getElementById('scopeOverlay');
 
 function enterScope() {
+  if (isSpectator) return; // наблюдатель смотрит своей камерой
   isScoped = true;
   scopeOverlay.classList.remove('hidden');
   zoomBtnEl.classList.add('active');
@@ -1819,6 +2010,7 @@ document.addEventListener('touchmove', (e) => {
 // Отправка ввода на сервер с фиксированной частотой
 setInterval(() => {
   if (!socket || !selfId) return;
+  if (isSpectator) return; // наблюдатель не управляет танком
 
   // Джойстик: движение и поворот, клавиатура — поверх
   joyKnobEl.style.transform = `translate(${joy.dx}px, ${joy.dy}px)`;
@@ -2271,12 +2463,15 @@ function updateActiveEffects(effects) {
   const key = effects.map(e => e.id + ':' + Math.ceil(e.remainingMs / 1000)).join(',');
   if (key === activeEffectsCache) return;
   activeEffectsCache = key;
+  const tracks = effects.find(e => e.id === 'tracks');
   activeEffectsEl.innerHTML = effects.map(e => {
     const card = ABILITY_CARDS.find(c => c[0] === e.id);
     if (!card) return '';
     const sec = e.remainingMs < 0 ? '' : Math.ceil(e.remainingMs / 1000) + 'с';
     return `<div class="effectBadge" style="background:${card[2]}"><span>${ABILITY_ICONS[card[0]] || '?'}</span><b>${sec}</b></div>`;
-  }).join('');
+  }).join('') + (tracks
+    ? `<div class="effectBadge" style="background:#7f8c8d" title="Гусеницы перебиты: танк обездвижен, но может стрелять"><span>⛓</span><b>${Math.ceil(tracks.remainingMs / 1000)}с</b></div>`
+    : '');
 }
 
 // ---------------------------------------------------------------------------
@@ -2414,6 +2609,7 @@ const respawnTimer = document.getElementById('respawnTimer');
 let deathShownAt = 0;
 
 function checkDeathScreen() {
+  if (isSpectator) return; // наблюдатель не умирает
   const me = currentState.players.find(p => p.id === selfId);
   if (!me) return;
 
@@ -2481,7 +2677,7 @@ let selfVisX = 0, selfVisZ = 0, selfVisInit = false; // сглаженная п�
 let downTreeIdx = new Set(); // индексы поваленных деревьев
 
 function updateSelfPrediction(me) {
-  selfPred = { baseTime: Date.now(), x: me.x, z: me.z, chassisAngle: me.chassisAngle, turretAngle: me.turretAngle };
+  selfPred = { baseTime: Date.now(), x: me.x, z: me.z, chassisAngle: me.chassisAngle, turretAngle: me.turretAngle, model: me.model };
 }
 
 function selfBuffActiveC(id) {
@@ -2530,6 +2726,8 @@ function predictedSelf() {
 
   // Поворот корпуса
   let turnMult = 1;
+  const me = selfPred && selfPred.model ? MODEL_STATS_C[selfPred.model] : null;
+  if (me) turnMult *= me.turnMult;
   if (selfBuffActiveC('spin')) turnMult *= 1.8;
   if (selfBuffActiveC('overdrive')) turnMult *= 1.15;
   if (selfBuffActiveC('emp')) turnMult *= 0.7;
@@ -2539,6 +2737,7 @@ function predictedSelf() {
 
   // Движение с локальной проверкой препятствий
   let speedMult = 1;
+  if (me) speedMult *= me.speedMult;
   if (selfBuffActiveC('speed')) speedMult *= 1.35;
   if (selfBuffActiveC('overdrive')) speedMult *= 1.15;
   if (selfBuffActiveC('emp')) speedMult *= 0.7;
@@ -2627,12 +2826,15 @@ function syncTanks(players) {
 
   players.forEach(p => {
     seenIds.add(p.id);
+    // Наблюдатель: у своего игрока танка нет и не будет
+    if (p.id === selfId && isSpectator) return;
     let mesh = tankMeshes.get(p.id);
 
     if (!mesh) {
       mesh = createTankMesh(p.color, p.model);
       scene.add(mesh);
       tankMeshes.set(p.id, mesh);
+      if (p.id === selfId && headlightsOn) applyHeadlightState(mesh);
     }
 
     if (!p.alive) {
@@ -2652,6 +2854,7 @@ function syncTanks(players) {
       mesh = createTankMesh(p.color, p.model);
       scene.add(mesh);
       tankMeshes.set(p.id, mesh);
+      if (p.id === selfId && headlightsOn) applyHeadlightState(mesh);
     }
 
     // Высота: батуты подбрасывают, обломок — на земле
@@ -2665,10 +2868,10 @@ function syncTanks(players) {
     const invis = (p.effects || []).some(e => e.id === 'invis');
     if (invis && mesh.userData.invisible !== true) {
       mesh.userData.invisible = true;
-      mesh.traverse(o => { if (o.isMesh) { o.material.transparent = true; o.material.opacity = 0.15; } });
+      mesh.traverse(o => { if (o.isMesh && !o.userData.blobShadow) { o.material.transparent = true; o.material.opacity = 0.15; } });
     } else if (!invis && mesh.userData.invisible === true) {
       mesh.userData.invisible = false;
-      mesh.traverse(o => { if (o.isMesh) { o.material.transparent = true; o.material.opacity = 1; } });
+      mesh.traverse(o => { if (o.isMesh && !o.userData.blobShadow) { o.material.transparent = true; o.material.opacity = 1; } });
     }
   });
 
@@ -3312,9 +3515,9 @@ function updateParticles(dt, now) {
 // ВСПЛЫВАЮЩИЙ ТЕКСТ В МИРЕ (например «НЕ ПРОБИТ»)
 // ---------------------------------------------------------------------------
 const damageTexts = [];
-function showDamageText(x, z, text, color, size) {
+function showDamageText(x, z, text, color, size, cls) {
   const el = document.createElement('div');
-  el.className = 'damageText';
+  el.className = cls || 'damageText';
   el.textContent = text;
   el.style.color = color || '#fff';
   if (size) el.style.fontSize = size + 'px';
@@ -3807,6 +4010,104 @@ function updateCamera(players) {
 }
 
 // ---------------------------------------------------------------------------
+// НАБЛЮДАТЕЛЬ: свободная камера над боем, Tab — следить за танком
+// ---------------------------------------------------------------------------
+const specCam = { x: 1500, y: 350, z: 1500, yaw: 0.7, pitch: -0.35, speed: 420, followId: null };
+let specPointerLocked = false;
+
+function enterSpectateMode() {
+  // Личный HUD не нужен — без танка
+  ['myRank', 'xpBarWrap', 'hpBarWrap', 'reloadBarWrap', 'artilleryWrap', 'ammoPanel', 'activeEffects'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  document.getElementById('nightHint').classList.add('hidden');
+  const hint = document.getElementById('spectateHint');
+  hint.classList.remove('hidden');
+  updateSpectateHint();
+  renderer.domElement.addEventListener('click', () => {
+    if (document.pointerLockElement !== renderer.domElement) renderer.domElement.requestPointerLock();
+  });
+  document.addEventListener('pointerlockchange', () => {
+    specPointerLocked = document.pointerLockElement === renderer.domElement;
+  });
+}
+
+function updateSpectateHint() {
+  const hint = document.getElementById('spectateHint');
+  if (!hint) return;
+  const p = currentState.players.find(q => q.id === specCam.followId);
+  hint.textContent = p
+    ? `👁 Наблюдатель · следим за «${p.nickname}» · Tab — следующий танк · WASD/Q/E — обзор`
+    : '👁 Наблюдатель · ЛКМ — обзор · WASD — полёт · Q/E — вниз/вверх · Tab — следить за танком';
+}
+
+function cycleSpectateTarget() {
+  if (!isSpectator) return;
+  const alive = currentState.players.filter(q => q.alive && !q.spectator);
+  if (!alive.length) { specCam.followId = null; return; }
+  const idx = alive.findIndex(q => q.id === specCam.followId);
+  specCam.followId = alive[(idx + 1) % alive.length].id;
+  updateSpectateHint();
+}
+
+function updateSpectatorCamera(dt, players) {
+  // Цель слежки погибла — возвращаемся в свободный полёт
+  if (specCam.followId) {
+    const p = players.find(q => q.id === specCam.followId && q.alive);
+    if (!p) { specCam.followId = null; updateSpectateHint(); }
+  }
+  // Любое движение — выход из слежки
+  if ((keys.forward || keys.back || keys.left || keys.right || keys.camLeft || keys.camRight) && specCam.followId) {
+    specCam.followId = null;
+    updateSpectateHint();
+  }
+
+  if (specCam.followId) {
+    // Слежка: камера плавно едет за танком сзади-сверху
+    const p = players.find(q => q.id === specCam.followId);
+    if (p) {
+      const a = p.chassisAngle;
+      const tx = p.x - Math.sin(a) * 150, tz = p.z - Math.cos(a) * 150;
+      const k = Math.min(1, dt * 3);
+      specCam.x += (tx - specCam.x) * k;
+      specCam.z += (tz - specCam.z) * k;
+      specCam.y += (p.y + 85 - specCam.y) * k;
+      const wantYaw = Math.atan2(-(p.x - specCam.x), -(p.z - specCam.z));
+      let dy = wantYaw - specCam.yaw;
+      while (dy > Math.PI) dy -= Math.PI * 2;
+      while (dy < -Math.PI) dy += Math.PI * 2;
+      specCam.yaw += dy * k * 2;
+      specCam.pitch += (-0.32 - specCam.pitch) * k;
+    }
+  } else {
+    // Свободный полёт: WASD по курсу, Q/E — вниз/вверх, Shift — быстрее
+    const fwd = new THREE.Vector3(
+      -Math.sin(specCam.yaw) * Math.cos(specCam.pitch),
+      Math.sin(specCam.pitch),
+      -Math.cos(specCam.yaw) * Math.cos(specCam.pitch)
+    );
+    const right = new THREE.Vector3(Math.cos(specCam.yaw), 0, -Math.sin(specCam.yaw));
+    const speed = specCam.speed * (keys.boost ? 3 : 1) * dt;
+    if (keys.forward) { specCam.x += fwd.x * speed; specCam.y += fwd.y * speed; specCam.z += fwd.z * speed; }
+    if (keys.back)   { specCam.x -= fwd.x * speed; specCam.y -= fwd.y * speed; specCam.z -= fwd.z * speed; }
+    if (keys.left)   { specCam.x -= right.x * speed; specCam.z -= right.z * speed; }
+    if (keys.right)  { specCam.x += right.x * speed; specCam.z += right.z * speed; }
+    if (keys.camLeft)  specCam.y -= speed;
+    if (keys.camRight) specCam.y += speed;
+    specCam.x = Math.max(-300, Math.min(world.width + 300, specCam.x));
+    specCam.z = Math.max(-300, Math.min(world.depth + 300, specCam.z));
+    specCam.y = Math.max(15, Math.min(1500, specCam.y));
+  }
+
+  camera.position.set(specCam.x, specCam.y, specCam.z);
+  camera.rotation.set(specCam.pitch, specCam.yaw, 0, 'YXZ');
+  // Солнце и тени следуют за камерой наблюдателя
+  sunLight.position.set(specCam.x + sunDirNorm.x * 1200, specCam.y + 80 + sunDirNorm.y * 1200, specCam.z + sunDirNorm.z * 1200);
+  sunLight.target.position.set(specCam.x, 0, specCam.z);
+}
+
+// ---------------------------------------------------------------------------
 // ГЛАВНЫЙ ЦИКЛ РЕНДЕРА
 // ---------------------------------------------------------------------------
 function animate() {
@@ -3842,9 +4143,10 @@ function animate() {
     updateArtilleryVisuals(now);
     updateFallingTrees(now);
     drawMinimap(now);
-    updateCamera(players);
+    if (isSpectator) updateSpectatorCamera(dt, players); else updateCamera(players);
     updateTankLabels(players);
     updateTimeOfDay(dt, players);
+    updateNightHint();
     skyDome.position.copy(camera.position);
   }
 

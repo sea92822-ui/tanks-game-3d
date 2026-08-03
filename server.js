@@ -46,12 +46,102 @@ const SPAWN_PROTECT_MS = 3000;
 const MAX_HP = 100;
 const KILLS_FOR_ROULETTE = 3;
 
+// Характеристики по классам танков (модели: light/medium/heavy)
+const MODEL_STATS = {
+  medium: { hp: 95,  speedMult: 1.0,  turnMult: 1.0,  dmgMult: 1.0 },  // Т-90: базовый, урон 20–60
+  light:  { hp: 75,  speedMult: 1.28, turnMult: 1.35, dmgMult: 0.8 },  // Лёгкий: быстрее/манёвреннее, урон до ~45
+  heavy:  { hp: 130, speedMult: 0.8,  turnMult: 0.78, dmgMult: 0.7 },  // Тяжёлый: медленнее, урон 15–40
+};
+
 // Захват центра: чья команда держит на точке больше танков — та захватывает.
 // Каждый захват приносит очко (как фраг). 1 танк в перевесе — 10 сек, 2 — 5 сек, 3+ — 3.3 сек
 const CAPTURE_RADIUS = 110;
 const CAPTURE_RATE_PER_TANK = 10;   // %/сек за каждый танк перевеса
 const CAPTURE_MAX = 100;
 const capture = { team: -1, progress: 0 }; // team: -1 нейтрален, 0/1 — владелец; progress: знак = кто захватывает
+
+// Критические попадания
+const TRACKS_IMMOBILIZE_MS = 3000;  // «Гусеницы!»: танк обездвижен на 3 с, но может стрелять
+const TRACKS_RELOAD_MULT = 1.5;     // «Башня!»: время перезарядки следующего выстрела +50%
+const RICOCHET_FRONT_CHANCE = 0.25; // «Рикошет!»: шанс отскока снаряда от лобовой брони
+
+// ---------------------------------------------------------------------------
+// ПАМЯТЬ БОТОВ: боты учатся на своём опыте и на действиях игроков.
+// Карта разбита на ячейки; в них копится, где видели врагов, где фраги и смерти.
+// Игроки (люди) влияют сильнее ботов — боты учатся у игрока.
+// ---------------------------------------------------------------------------
+const MEM_CELL = 300; // размер ячейки памяти
+const botMemory = new Map(); // key "cx,cz" -> { x, z, seen:[0,0], kills:[0,0], deaths:[0,0] }
+const botStats = { cells: 0, ambushes: 0, ambushShots: 0, ambushKills: 0, backShots: 0 };
+let lastMemRecordAt = 0;
+let lastBotStatsLog = 0;
+
+function memCell(x, z) {
+  const key = Math.floor(x / MEM_CELL) + ',' + Math.floor(z / MEM_CELL);
+  let c = botMemory.get(key);
+  if (!c) {
+    c = {
+      x: Math.floor(x / MEM_CELL) * MEM_CELL + MEM_CELL / 2,
+      z: Math.floor(z / MEM_CELL) * MEM_CELL + MEM_CELL / 2,
+      seen: [0, 0], kills: [0, 0], deaths: [0, 0],
+    };
+    botMemory.set(key, c);
+    botStats.cells++;
+  }
+  return c;
+}
+
+// Боты записывают, где видели врагов и союзников (позиции игроков — с двойным весом)
+function recordBotMemory(now) {
+  for (const id in players) {
+    const p = players[id];
+    if (!p.alive) continue;
+    const c = memCell(p.x, p.z);
+    c.seen[p.team] = Math.min((c.seen[p.team] || 0) + (p.bot ? 1 : 2), 40);
+  }
+}
+
+// Насколько ячейка «горячая» для команды: где враги бывают и где удаётся фрагить
+function botCellScore(cell, team) {
+  const en = 1 - team;
+  return (cell.seen[en] || 0) + (cell.kills[en] || 0) * 3 + (cell.deaths[team] || 0) * 2 + (cell.kills[team] || 0) * 4;
+}
+
+// Случайная изученная «горячая» ячейка: чем больше в ней опыта — тем чаще едем туда
+function pickBotLearnPoint(team) {
+  const cands = [];
+  let total = 0;
+  for (const c of botMemory.values()) {
+    const s = botCellScore(c, team);
+    if (s <= 0) continue;
+    cands.push({ x: c.x, z: c.z, s });
+    total += s;
+  }
+  if (!cands.length) return null;
+  let r = Math.random() * total;
+  for (const c of cands) { r -= c.s; if (r <= 0) return { x: c.x, z: c.z }; }
+  return { x: cands[0].x, z: cands[0].z };
+}
+
+// Место засады: за «горячей» ячейкой по ходу врагов от их базы —
+// враги едут через точку, бот оказывается у них за спиной (корма — 1.35x урона)
+function pickBotAmbushPoint(bot) {
+  const cands = [];
+  for (const c of botMemory.values()) {
+    const s = botCellScore(c, bot.team);
+    if (s >= 4) cands.push({ x: c.x, z: c.z, s });
+  }
+  if (!cands.length) return null;
+  cands.sort((a, b) => b.s - a.s);
+  const c = cands[Math.floor(Math.random() * Math.min(5, cands.length))];
+  const enemyBase = bot.team === 0 ? { x: WORLD.width - 300, z: WORLD.depth - 300 } : { x: 300, z: 300 };
+  const dx = c.x - enemyBase.x, dz = c.z - enemyBase.z;
+  const len = Math.hypot(dx, dz) || 1;
+  const ax = Math.max(300, Math.min(WORLD.width - 300, c.x + dx / len * 280));
+  const az = Math.max(300, Math.min(WORLD.depth - 300, c.z + dz / len * 280));
+  if (solidProbe(ax, az)) return null;
+  return { x: ax, z: az, laneX: c.x, laneZ: c.z, until: 0 };
+}
 
 let OBSTACLES = [];
 let TRAMPOLINES = [];
@@ -92,6 +182,8 @@ function resetWorld(size) {
     pl.alive = true;
     pl.respawnAt = 0;
     pl.spawnProtectUntil = now + SPAWN_PROTECT_MS;
+    pl.tracksUntil = 0;
+    pl.reloadPenalty = false;
     pl.buffs = {};
     pl.flags = {};
     pl.rageKills = 0;
@@ -404,12 +496,14 @@ function autoTeam() {
 }
 
 function createPlayer(id, nickname, color, model, team) {
-  const side = (team === 0 || team === 1) ? team : autoTeam();
-  const spawn = getSafeSpawnPoint(side);
+  const spectator = team === -1;
+  const side = spectator ? -1 : (team === 0 || team === 1) ? team : autoTeam();
+  const spawn = spectator ? { x: WORLD.width / 2, z: WORLD.depth / 2 } : getSafeSpawnPoint(side);
   return {
     id,
     side,
     team: side,
+    spectator,
     bot: false,
     nickname: nickname && nickname.trim() ? nickname.trim().slice(0, 16) : randomNickname(),
     x: spawn.x,
@@ -418,12 +512,13 @@ function createPlayer(id, nickname, color, model, team) {
     vy: 0,            // вертикальная скорость
     bounceCooldown: 0,
     model: TANK_MODELS.includes(model) ? model : 'medium',
+    modelStats: MODEL_STATS[TANK_MODELS.includes(model) ? model : 'medium'] || MODEL_STATS.medium,
     chassisAngle: 0,   // направление корпуса / движения (рад, вокруг Y)
     turretAngle: 0,    // направление башни (рад, вокруг Y) — независимо от корпуса
     color: color || randomColor(),
-    hp: MAX_HP,
-    maxHp: MAX_HP,
-    alive: true,
+    hp: spectator ? 0 : (MODEL_STATS[TANK_MODELS.includes(model) ? model : 'medium'] || MODEL_STATS.medium).hp,
+    maxHp: (MODEL_STATS[TANK_MODELS.includes(model) ? model : 'medium'] || MODEL_STATS.medium).hp,
+    alive: !spectator,
     kills: 0,
     deaths: 0,
     ammo: 'ap',       // тип снаряда: ap / he
@@ -438,6 +533,8 @@ function createPlayer(id, nickname, color, model, team) {
     respawnAt: 0,
     killsSinceUpgrade: 0,
     artilleryReadyAt: 0, // раз в минуту можно вызвать артиллерию
+    tracksUntil: 0,      // «Гусеницы»: до этого момента танк обездвижен (стрелять можно)
+    reloadPenalty: false, // «Башня»: следующая перезарядка в 1.5 раза дольше
     withBots: true,     // игрок хочет играть с ботами
     botDifficulty: 'hard', // выбранная игроком сложность ботов
     chatCooldownUntil: 0, // защита от спама в чате
@@ -471,6 +568,10 @@ function createBot(team) {
   bot.botWanderAngle = Math.random() * Math.PI * 2; // направление без цели
   bot.botPatrol = null;            // точка патруля по карте: { x, z, until }
   bot.botRepositionUntil = Date.now() + 4000 + Math.random() * 6000; // когда сменить позицию
+  bot.botAmbush = null;            // засада: { x, z, laneX, laneZ, until }
+  bot.botAmbushAt = Date.now() + 15000 + Math.random() * 30000; // когда впервые встать в засаду
+  bot.botAmbushHurtUntil = 0;      // получили урон в засаде — выходим
+  bot.botLastAmbushShot = 0;       // время последнего выстрела из засады (для статистики)
   bot.botStuckUntil = 0;     // если застрял — поворачиваем жёстче
   bot.input.ammo = 'ap';
   players['bot-' + n] = bot;
@@ -589,7 +690,7 @@ io.on('connection', (socket) => {
   socket.on('join', (data) => {
     const nickname = data && data.nickname ? String(data.nickname) : '';
     const color = data && TANK_COLORS.includes(data.color) ? data.color : null;
-    const team = data && (data.team === 0 || data.team === 1) ? data.team : null;
+    const team = data && (data.team === 0 || data.team === 1) ? data.team : (data && data.team === -1 ? -1 : null);
     const player = createPlayer(socket.id, nickname, color, data && data.model, team);
     if (data && typeof data.withBots === 'boolean') player.withBots = data.withBots;
     if (data && BOT_DIFFICULTIES[data.botDifficulty]) player.botDifficulty = data.botDifficulty;
@@ -603,12 +704,12 @@ io.on('connection', (socket) => {
       selfId: socket.id,
       world: WORLD,
       obstacles: OBSTACLES,
-      maxHp: MAX_HP,
+      maxHp: player.modelStats.hp,
       team: player.team,
       teams: { score: teamScore, toWin: KILLS_TO_WIN, winner: matchWinner },
     });
 
-    console.log(`Игрок подключился: ${player.nickname} (${socket.id}) команда ${TEAM_NAMES[player.team]} withBots=${player.withBots}`);
+    console.log(`Игрок подключился: ${player.nickname} (${socket.id}) команда ${player.spectator ? 'наблюдатель' : TEAM_NAMES[player.team]} withBots=${player.withBots}`);
   });
 
   // Общий чат
@@ -679,6 +780,9 @@ function tick() {
   for (const id in players) {
     const p = players[id];
 
+    // Наблюдатель: без танка, не воскрешается, за боем следит камерой
+    if (p.spectator) continue;
+
     if (!p.alive) {
       if (now >= p.respawnAt) {
         const spawn = getSafeSpawnPoint(p.side);
@@ -711,6 +815,18 @@ function tick() {
   updateCapture(dt);
   updatePickups(now);
   updateArtillery(now);
+
+  // Память ботов: раз в секунду записываем, кто где находился
+  if (now - lastMemRecordAt > 1000) {
+    lastMemRecordAt = now;
+    recordBotMemory(now);
+  }
+  // Раз в минуту — сводка: учится ли ИИ
+  if (now - lastBotStatsLog > 60000) {
+    lastBotStatsLog = now;
+    console.log(`[botAI] память: ${botStats.cells} ячеек; засад: ${botStats.ambushes}; выстрелов из засады: ${botStats.ambushShots}; убийств из засады: ${botStats.ambushKills}; попаданий в спину: ${botStats.backShots}`);
+  }
+
   broadcastState();
 }
 
@@ -771,33 +887,40 @@ function applyPickup(p, type, now) {
 }
 
 function updatePlayerMovement(p, dt) {
-  // Поворот корпуса (A/D) — «Волчок» ускоряет, «ЭМИ»/«Мороз» замедляют
-  let turnMult = 1;
-  if (buffActive(p, 'spin')) turnMult *= 1.8;
-  if (buffActive(p, 'overdrive')) turnMult *= 1.15;
-  if (buffActive(p, 'emp')) turnMult *= 0.7;
-  if (buffActive(p, 'slow')) turnMult *= 0.6;
-  if (p.input.left) p.chassisAngle += TANK_TURN_SPEED * turnMult * dt;
-  if (p.input.right) p.chassisAngle -= TANK_TURN_SPEED * turnMult * dt;
+  const now = Date.now();
+  const immobilized = now < p.tracksUntil; // «Гусеницы»: ехать и разворачиваться нельзя, стрелять можно
 
-  // Движение вперёд/назад по направлению корпуса (W/S)
-  let speedMult = 1;
-  if (buffActive(p, 'speed')) speedMult *= 1.35;
-  if (buffActive(p, 'overdrive')) speedMult *= 1.15;
-  if (buffActive(p, 'emp')) speedMult *= 0.7;
-  if (buffActive(p, 'slow')) speedMult *= 0.6;
-  const speed = TANK_BASE_SPEED * speedMult;
-  let dir = 0;
-  if (p.input.forward) dir += 1;
-  if (p.input.back) dir -= 1;
+  if (!immobilized) {
+    // Поворот корпуса (A/D) — «Волчок» ускоряет, «ЭМИ»/«Мороз» замедляют
+    let turnMult = 1;
+    if (p.modelStats) turnMult *= p.modelStats.turnMult;
+    if (buffActive(p, 'spin')) turnMult *= 1.8;
+    if (buffActive(p, 'overdrive')) turnMult *= 1.15;
+    if (buffActive(p, 'emp')) turnMult *= 0.7;
+    if (buffActive(p, 'slow')) turnMult *= 0.6;
+    if (p.input.left) p.chassisAngle += TANK_TURN_SPEED * turnMult * dt;
+    if (p.input.right) p.chassisAngle -= TANK_TURN_SPEED * turnMult * dt;
 
-  if (dir !== 0) {
-    const dx = Math.sin(p.chassisAngle) * dir * speed * dt;
-    const dz = Math.cos(p.chassisAngle) * dir * speed * dt;
-    tryMove(p, p.x + dx, p.z + dz, dt);
+    // Движение вперёд/назад по направлению корпуса (W/S)
+    let speedMult = 1;
+    if (p.modelStats) speedMult *= p.modelStats.speedMult;
+    if (buffActive(p, 'speed')) speedMult *= 1.35;
+    if (buffActive(p, 'overdrive')) speedMult *= 1.15;
+    if (buffActive(p, 'emp')) speedMult *= 0.7;
+    if (buffActive(p, 'slow')) speedMult *= 0.6;
+    const speed = TANK_BASE_SPEED * speedMult;
+    let dir = 0;
+    if (p.input.forward) dir += 1;
+    if (p.input.back) dir -= 1;
+
+    if (dir !== 0) {
+      const dx = Math.sin(p.chassisAngle) * dir * speed * dt;
+      const dz = Math.cos(p.chassisAngle) * dir * speed * dt;
+      tryMove(p, p.x + dx, p.z + dz, dt);
+    }
   }
 
-  // Башня плавно доворачивается к углу, присланному клиентом
+  // Башня плавно доворачивается к углу, присланному клиентом (обездвиженный танк может стрелять)
   let turretMult = 1;
   if (buffActive(p, 'fastturret')) turretMult *= 2;
   if (buffActive(p, 'overdrive')) turretMult *= 1.4;
@@ -844,10 +967,16 @@ function solidProbe(x, z) {
   return false;
 }
 
-// Точка для патруля бота по всей карте: случайное место (иногда — активный бонус)
-function pickBotPatrolPoint() {
+// Точка для патруля бота: чаще всего — изученное «горячее» место (где бывают
+// враги и фраги), иногда активный бонус, иногда случайная точка (исследование карты)
+function pickBotPatrolPoint(bot) {
   const m = 400;
-  if (Math.random() < 0.35) {
+  const r = Math.random();
+  if (r < 0.45) {
+    const learned = pickBotLearnPoint(bot.team);
+    if (learned) return learned;
+  }
+  if (r < 0.75) {
     const active = pickups.filter(pk => pk.active);
     if (active.length) {
       const pk = active[Math.floor(Math.random() * active.length)];
@@ -871,72 +1000,153 @@ function updateBot(bot, dt, now) {
     if (d < best) { best = d; target = e; }
   }
 
+  // В засаде получили урон — засада раскрыта, выходим в открытый бой
+  if (bot.botAmbush && now < bot.botAmbushHurtUntil) bot.botAmbush = null;
+
+  let aim = null; // направление на врага (используется в блоке движения)
+
   if (!target) {
-    // Врагов нет — патрулируем карту: едем к своей точке, дойдя или устав — к новой
+    // Врагов нет: патрулируем карту, иногда встаём в засаду в изученном месте.
+    // Плюс захват центра: точка у врага или спорная — едем занимать и держать
     input.shooting = false;
-    if (!bot.botPatrol || now > bot.botPatrol.until) {
-      bot.botPatrol = { ...pickBotPatrolPoint(), until: now + 20000 };
+    const cx = WORLD.width / 2, cz = WORLD.depth / 2;
+    const capDist = Math.hypot(bot.x - cx, bot.z - cz);
+    const enemyOwns = capture.team === 1 - bot.team;
+    const contested = capture.team === -1 && capture.progress === 0;
+    const ownSideCapturing = (capture.progress > 0 && bot.team === 0) || (capture.progress < 0 && bot.team === 1);
+    const enemySideCapturing = (capture.progress > 0 && bot.team === 1) || (capture.progress < 0 && bot.team === 0);
+    const needCapture = enemyOwns || contested || ownSideCapturing || enemySideCapturing;
+
+    if (capDist < CAPTURE_RADIUS && needCapture) {
+      // уже на точке — держим её (свежий hold-патруль, чтобы не уйти)
+      bot.botPatrol = { x: cx, z: cz, until: now + 2000, hold: true };
+      bot.botAmbush = null;
+    } else if (bot.botAmbush && now < bot.botAmbush.until && !enemyOwns) {
+      bot.botPatrol = null; // продолжаем ждать в засаде
+    } else {
+      bot.botAmbush = null;
+      if (!bot.botPatrol || now > bot.botPatrol.until) {
+        // Точка у врага — вся команда идёт отбивать; спорная/наша захватывает —
+        // часть команды помогает, остальные патрулируют изученные места
+        if (enemyOwns) bot.botPatrol = { x: cx, z: cz, until: now + 20000, hold: true };
+        else if (contested && Math.random() < 0.35) bot.botPatrol = { x: cx, z: cz, until: now + 20000, hold: true };
+        else if (ownSideCapturing && Math.random() < 0.3) bot.botPatrol = { x: cx, z: cz, until: now + 20000, hold: true };
+        else bot.botPatrol = { ...pickBotPatrolPoint(bot), until: now + 20000 };
+      }
+      if (now >= bot.botAmbushAt && botMemory.size >= 8 && Math.random() < 0.3) {
+        const amb = pickBotAmbushPoint(bot);
+        if (amb && !(bot.botPatrol && bot.botPatrol.hold)) {
+          amb.until = now + 8000 + Math.random() * 7000;
+          bot.botAmbush = amb;
+          bot.botPatrol = null;
+          bot.botAmbushAt = now + 15000 + Math.random() * 25000;
+          botStats.ambushes++;
+        }
+      }
     }
-    const pat = bot.botPatrol;
-    const pd = angleDiff(Math.atan2(pat.x - bot.x, pat.z - bot.z), bot.chassisAngle);
-    input.forward = Math.abs(pd) < 1.1;
-    input.back = false;
-    input.left = pd > 0.1;
-    input.right = pd < -0.1;
-    return;
-  }
-
-  // ---- Прицел башни на врага с ошибкой по сложности ----
-  const aim = Math.atan2(target.x - bot.x, target.z - bot.z);
-  if (now >= bot.botAimUntil) {
-    bot.botAimUntil = now + cfg.aimUpdateMs[0] + Math.random() * (cfg.aimUpdateMs[1] - cfg.aimUpdateMs[0]);
-    bot.botAimErr = (Math.random() - 0.5) * 2 * cfg.aimErr;
-  }
-  input.targetTurretAngle = aim + bot.botAimErr;
-
-  // ---- Огонь: доведённый прицел + реакция + прямая видимость ----
-  const aimDiff = Math.abs(angleDiff(input.targetTurretAngle, bot.turretAngle));
-  const canShoot = aimDiff < 0.12 && best < cfg.fireRange && hasLineOfSight(bot.x, bot.z, target.x, target.z);
-  if (canShoot && now >= bot.botReactAt) {
-    input.shooting = true;
   } else {
-    input.shooting = false;
-    if (!canShoot && now >= bot.botReactAt) {
-      bot.botReactAt = now + cfg.reaimMs[0] + Math.random() * (cfg.reaimMs[1] - cfg.reaimMs[0]); // заново прицеливается
+    // ---- Прицел башни на врага с ошибкой по сложности ----
+    aim = Math.atan2(target.x - bot.x, target.z - bot.z);
+    if (now >= bot.botAimUntil) {
+      bot.botAimUntil = now + cfg.aimUpdateMs[0] + Math.random() * (cfg.aimUpdateMs[1] - cfg.aimUpdateMs[0]);
+      bot.botAimErr = (Math.random() - 0.5) * 2 * cfg.aimErr;
+    }
+    input.targetTurretAngle = aim + bot.botAimErr;
+
+    // ---- Огонь: доведённый прицел + реакция + прямая видимость ----
+    const aimDiff = Math.abs(angleDiff(input.targetTurretAngle, bot.turretAngle));
+    const canShoot = aimDiff < 0.12 && best < cfg.fireRange && hasLineOfSight(bot.x, bot.z, target.x, target.z);
+    if (canShoot && now >= bot.botReactAt) {
+      input.shooting = true;
+    } else {
+      input.shooting = false;
+      if (!canShoot && now >= bot.botReactAt) {
+        bot.botReactAt = now + cfg.reaimMs[0] + Math.random() * (cfg.reaimMs[1] - cfg.reaimMs[0]); // заново прицеливается
+      }
+    }
+
+    // Периодически бот меняет позицию: уходит в другую часть карты (даже в бою).
+    // Точка у врага — отбиваем; иначе иногда засада в изученном месте, иногда фланг
+    if (now >= bot.botRepositionUntil) {
+      bot.botRepositionUntil = now + 10000 + Math.random() * 14000;
+      if (capture.team === 1 - bot.team) {
+        bot.botPatrol = { x: WORLD.width / 2, z: WORLD.depth / 2, until: now + 15000, hold: true };
+        bot.botAmbush = null;
+      } else if (now >= bot.botAmbushAt && botMemory.size >= 8 && Math.random() < 0.4) {
+        const amb = pickBotAmbushPoint(bot);
+        if (amb) {
+          amb.until = now + 8000 + Math.random() * 7000;
+          bot.botAmbush = amb;
+          bot.botPatrol = null;
+          bot.botAmbushAt = now + 18000 + Math.random() * 27000;
+          botStats.ambushes++;
+        }
+      } else if (!canShoot || Math.random() < 0.3) {
+        bot.botPatrol = { ...pickBotPatrolPoint(bot), until: now + 9000 };
+      }
     }
   }
 
-  // Периодически бот меняет позицию: уходит в другую часть карты (даже в бою),
-  // особенно если врага не видно — вместо стояния на месте объезжает с фланга
-  if (now >= bot.botRepositionUntil) {
-    bot.botRepositionUntil = now + 10000 + Math.random() * 14000;
-    if (!canShoot || Math.random() < 0.3) {
-      bot.botPatrol = { ...pickBotPatrolPoint(), until: now + 9000 };
-    }
-  }
-
-  // ---- Движение: патруль / сближение / обход вокруг на своей дистанции ----
+  // ---- Движение: засада / патруль / сближение / обход вокруг ----
   let moveAngle;
   const steerActive = now < bot.botSteerUntil;
-  if (bot.botPatrol && now < bot.botPatrol.until) {
-    // Репозиция или патруль: едем к точке в другой части карты
-    moveAngle = Math.atan2(bot.botPatrol.x - bot.x, bot.botPatrol.z - bot.z);
-    if (Math.hypot(bot.botPatrol.x - bot.x, bot.botPatrol.z - bot.z) < 150) {
-      bot.botPatrol = null;
-      bot.botRepositionUntil = now + 4000 + Math.random() * 8000;
+  if (bot.botAmbush && now < bot.botAmbush.until) {
+    // ---- ЗАСАДА: едем на позицию и ждём, ствол смотрит в «коридор» ----
+    const amb = bot.botAmbush;
+    const dist = Math.hypot(amb.x - bot.x, amb.z - bot.z);
+    input.targetTurretAngle = Math.atan2(amb.laneX - bot.x, amb.laneZ - bot.z);
+    if (dist > 120) {
+      if (target && best < 350) {
+        // враг на носу — засада отменяется, встречаем в бою
+        bot.botAmbush = null;
+      }
+      moveAngle = Math.atan2(amb.x - bot.x, amb.z - bot.z); // идём на позицию
+      input.shooting = false;
+    } else {
+      moveAngle = null; // стоим в засаде
+      if (target) {
+        // Стреляем только когда враг к нам спиной: корма пробивается сильнее (1.35x)
+        const angToBot = Math.atan2(bot.x - target.x, bot.z - target.z);
+        let backDiff = Math.abs(angToBot - target.chassisAngle);
+        while (backDiff > Math.PI) backDiff -= Math.PI * 2;
+        backDiff = Math.abs(backDiff);
+        const aimDiff = Math.abs(angleDiff(input.targetTurretAngle, bot.turretAngle));
+        const shotOk = backDiff > 2.4 && aimDiff < 0.12 && best < cfg.fireRange && hasLineOfSight(bot.x, bot.z, target.x, target.z);
+        input.shooting = shotOk && now >= bot.botReactAt;
+        if (shotOk) {
+          botStats.ambushShots++;
+          bot.botLastAmbushShot = now;
+        }
+        // Враг повернулся к нам или подошёл вплотную — засада раскрыта
+        if (backDiff < 1.2 || best < 260) bot.botAmbush = null;
+      } else {
+        input.shooting = false;
+      }
+    }
+  } else if (bot.botPatrol && now < bot.botPatrol.until) {
+    // Репозиция, патруль или точка захвата: едем к цели
+    const pd = Math.hypot(bot.botPatrol.x - bot.x, bot.botPatrol.z - bot.z);
+    if (bot.botPatrol.hold && pd < 90) {
+      moveAngle = null; // держим точку захвата
+    } else {
+      moveAngle = Math.atan2(bot.botPatrol.x - bot.x, bot.botPatrol.z - bot.z);
+      if (pd < 150 && !bot.botPatrol.hold) {
+        bot.botPatrol = null;
+        bot.botRepositionUntil = now + 4000 + Math.random() * 8000;
+      }
     }
   } else if (steerActive) {
     // Объезд препятствия: едем вбок, пока не выйдем на свободное место
     moveAngle = bot.chassisAngle + Math.PI / 2 * (bot.botSteerDir || 1);
-  } else if (best > bot.botCombatRange + 80) {
+  } else if (target && best > bot.botCombatRange + 80) {
     moveAngle = aim; // едем на врага
-  } else if (cfg.orbit) {
+  } else if (target && cfg.orbit) {
     if (now >= bot.botOrbitUntil) {
       bot.botOrbitUntil = now + 2500 + Math.random() * 2500;
       bot.botOrbitDir = -bot.botOrbitDir;
     }
     moveAngle = aim + Math.PI / 2 * bot.botOrbitDir; // кружим, чтобы не стоять столбом
-  } else if (!canShoot && !hasLineOfSight(bot.x, bot.z, target.x, target.z)) {
+  } else if (target && !canShoot && !hasLineOfSight(bot.x, bot.z, target.x, target.z)) {
     // лёгкий бот: враг за деревом — отходим в сторону короткими рывками
     if (now >= bot.botOrbitUntil) {
       bot.botOrbitUntil = now + 1500 + Math.random() * 1000;
@@ -1122,10 +1332,13 @@ function updatePlayerShooting(p, now) {
   let reloadMult = 1;
   if (buffActive(p, 'reload')) reloadMult *= 0.5;
   if (buffActive(p, 'overdrive')) reloadMult *= 0.85;
+  // «Башня»: попадание в башню — следующая перезарядка на 50% дольше
+  if (p.reloadPenalty) reloadMult *= TRACKS_RELOAD_MULT;
   const reloadTime = BASE_RELOAD_MS * reloadMult;
   if (now - p.lastShotTime < reloadTime) return;
 
   p.lastShotTime = now;
+  p.reloadPenalty = false; // штраф применился к этой перезарядке
   fireBullet(p);
 }
 
@@ -1142,7 +1355,7 @@ function fireBullet(p) {
   const ammo = p.input.ammo || 'ap';
 
   for (const angle of angles) {
-    let dmg = BULLET_BASE_DAMAGE * p.damageMult;
+    let dmg = BULLET_BASE_DAMAGE * p.damageMult * (p.modelStats ? p.modelStats.dmgMult : 1);
     if (buffActive(p, 'damage')) dmg *= 1.5;
     if (buffActive(p, 'overdrive')) dmg *= 1.15;
     if (p.flags.rage) dmg *= 1 + 0.15 * p.rageKills;
@@ -1366,8 +1579,10 @@ function dealDamage(target, amount, attackerId, x, z, bullet, now) {
   }
 
   let dmg = amount;
+  let crit = '';
 
-  // Зоны попадания: лоб бронирован, корма слабая, башня — уязвимое место
+  // Зоны попадания: лоб бронирован (бывает рикошет), корма слабая,
+  // башня — уязвимое место (штраф к перезарядке), гусеницы — обездвиживание
   if (bullet) {
     const hitAng = Math.atan2(bullet.x - target.x, bullet.z - target.z);
     let diff = Math.abs(hitAng - target.chassisAngle);
@@ -1375,14 +1590,37 @@ function dealDamage(target, amount, attackerId, x, z, bullet, now) {
     diff = Math.abs(diff);
 
     let zoneMult = 1;
-    if (diff < 1.0) zoneMult = 0.8;        // лоб — броня
-    else if (diff < 2.4) zoneMult = 1.0;   // борт
-    else zoneMult = 1.35;                  // корма — пробивается легче
+    if (diff < 1.0) {
+      zoneMult = 0.8; // лоб — броня
+      if (Math.random() < RICOCHET_FRONT_CHANCE) crit = 'ricochet';
+    } else if (diff < 2.4) zoneMult = 1.0;   // борт
+    else zoneMult = 1.35;                    // корма — пробивается легче
+    if (zoneMult > 1 && attacker && attacker.bot) botStats.backShots++;
 
-    // Попадание в башню (уязвимое место)
+    // Попадание в башню (уязвимое место): +20% урона и штраф к перезарядке
     const turretX = target.x + Math.sin(target.turretAngle) * 6;
     const turretZ = target.z + Math.cos(target.turretAngle) * 6;
-    if (Math.hypot(bullet.x - turretX, bullet.z - turretZ) < 13) zoneMult *= 1.2;
+    const turretHit = Math.hypot(bullet.x - turretX, bullet.z - turretZ) < 13;
+
+    // Гусеницы: боковые полосы корпуса танка. Снаряд останавливается на
+    // радиусе TANK_RADIUS + BULLET_RADIUS ≈ 25 — полоса строится по этой геометрии
+    const fwdX = Math.sin(target.chassisAngle), fwdZ = Math.cos(target.chassisAngle);
+    const hx = bullet.x - target.x, hz = bullet.z - target.z;
+    const along = hx * fwdX + hz * fwdZ;   // вдоль корпуса
+    const across = hx * fwdZ - hz * fwdX;  // поперёк корпуса
+    const trackHit = Math.abs(along) < 26 && Math.abs(across) > 6.5;
+
+    if (crit === 'ricochet') {
+      // Отскок от лобовой брони: урона и эффектов нет
+      io.emit('hit', { x: target.x, z: target.z, color: attacker ? attacker.color : '#ffffff', id: target.id, barrel: false, ownerId: attackerId, damage: 0, crit: 'ricochet' });
+      return;
+    }
+    if (trackHit) {
+      crit = 'tracks'; // урон стандартный (борт), но гусеницы перебиты
+    } else if (turretHit) {
+      zoneMult *= 1.2;
+      crit = 'turret';
+    }
 
     dmg = Math.min(amount * 1.6, dmg * zoneMult);
   }
@@ -1398,6 +1636,9 @@ function dealDamage(target, amount, attackerId, x, z, bullet, now) {
     if (bullet && bullet.freeze) target.buffs.slow = { until: now + 3000 };
     if (bullet && bullet.burn) target.buffs.burn = { until: now + 3000 };
     if (bullet && bullet.jam) target.jamUntil = now + 2000;
+    // Критические попадания: гусеницы — обездвиживание, башня — долгая перезарядка
+    if (bullet && crit === 'tracks') target.tracksUntil = now + TRACKS_IMMOBILIZE_MS;
+    if (bullet && crit === 'turret') target.reloadPenalty = true;
     if (bullet && bullet.blast) {
       // «Фугас»: взрыв по площади вокруг точки попадания
       for (const id in players) {
@@ -1416,7 +1657,7 @@ function dealDamage(target, amount, attackerId, x, z, bullet, now) {
   const hz = bullet ? bullet.z : z;
   const barrelHit = Math.hypot(hx - tipX, hz - tipZ) < 16;
 
-  io.emit('hit', { x: target.x, z: target.z, color: attacker ? attacker.color : '#ffffff', id: target.id, barrel: barrelHit, ownerId: attackerId, damage: Math.round(dmg) });
+  io.emit('hit', { x: target.x, z: target.z, color: attacker ? attacker.color : '#ffffff', id: target.id, barrel: barrelHit, ownerId: attackerId, damage: Math.round(dmg), crit: crit || undefined });
 
   if (target.hp <= 0) {
     if (target.flags.second) {
@@ -1425,6 +1666,18 @@ function dealDamage(target, amount, attackerId, x, z, bullet, now) {
       target.flags.second = false;
       return;
     }
+
+    // Память ботов: где произошёл фраг — горячая точка для команды стрелка,
+    // где умерли — опасная зона. Действия игроков боты ценят сильнее
+    const mc = memCell(target.x, target.z);
+    if (attacker) {
+      mc.kills[attacker.team] = Math.min((mc.kills[attacker.team] || 0) + (attacker.bot ? 1 : 3), 60);
+      if (attacker.bot && now - (attacker.botLastAmbushShot || 0) < 5000) botStats.ambushKills++;
+    }
+    mc.deaths[target.team] = Math.min((mc.deaths[target.team] || 0) + (target.bot ? 1 : 3), 60);
+
+    // Бот в засаде получил урон — выходит из засады (засада раскрыта)
+    if (target.bot && target.botAmbush && now < target.botAmbush.until) target.botAmbushHurtUntil = now + 2500;
 
     const wasKamikaze = target.flags.kamikaze;
 
@@ -1437,6 +1690,8 @@ function dealDamage(target, amount, attackerId, x, z, bullet, now) {
     target.rageKills = 0;
     target.damageMult = 1;
     target.jamUntil = 0;
+    target.tracksUntil = 0;
+    target.reloadPenalty = false;
 
     // «Камikадзе» — взрыв при гибели
     if (wasKamikaze) {
@@ -1478,7 +1733,7 @@ function dealDamage(target, amount, attackerId, x, z, bullet, now) {
 // ---------------------------------------------------------------------------
 function broadcastState() {
   const now = Date.now();
-  const playersState = Object.values(players).map(p => {
+  const playersState = Object.values(players).filter(p => !p.spectator).map(p => {
     const effects = [];
     for (const id in p.buffs) {
       if (p.buffs[id].until > now) effects.push({ id, remainingMs: p.buffs[id].until - now });
@@ -1488,6 +1743,9 @@ function broadcastState() {
     }
     if (p.alive && now < p.spawnProtectUntil) {
       effects.push({ id: 'protect', remainingMs: p.spawnProtectUntil - now });
+    }
+    if (p.alive && now < p.tracksUntil) {
+      effects.push({ id: 'tracks', remainingMs: p.tracksUntil - now });
     }
     return {
       id: p.id,
@@ -1503,13 +1761,14 @@ function broadcastState() {
       bot: !!p.bot,
       hp: p.hp,
       maxHp: p.maxHp,
-      reloadMs: Math.round(BASE_RELOAD_MS),
+      reloadMs: Math.round(BASE_RELOAD_MS * (p.reloadPenalty ? TRACKS_RELOAD_MULT : 1)),
       alive: p.alive,
       kills: p.kills,
       deaths: p.deaths,
       ammo: p.input.ammo,
       effects,
       artilleryReadyAt: p.artilleryReadyAt,
+      botMode: p.bot ? (p.botAmbush && now < p.botAmbush.until ? 'ambush' : p.botPatrol ? 'patrol' : 'fight') : '',
     };
   });
 

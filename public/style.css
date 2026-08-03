@@ -237,6 +237,19 @@ html, body {
   user-select: none;
 }
 
+/* Критическое попадание: крупная надпись над подбитым танком */
+.critText {
+  position: fixed;
+  transform: translate(-50%, -100%);
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  text-shadow: 0 0 10px rgba(255, 140, 60, 0.9), 0 0 3px #000, 2px 2px 4px #000;
+  pointer-events: none;
+  z-index: 25;
+  user-select: none;
+}
+
 /* ---------- Пинг ---------- */
 #pingText {
   position: fixed;
@@ -322,6 +335,7 @@ html, body {
 }
 #matchBanner.win { background: rgba(46, 204, 113, 0.25); color: #6bffb0; border: 2px solid rgba(46, 204, 113, 0.7); }
 #matchBanner.lose { background: rgba(231, 76, 60, 0.25); color: #ff8f85; border: 2px solid rgba(231, 76, 60, 0.7); }
+#matchBanner.neutral { background: rgba(90, 120, 200, 0.25); color: #a8c8ff; border: 2px solid rgba(90, 120, 200, 0.7); }
 @keyframes bannerPulse { from { transform: translateX(-50%) scale(1); } to { transform: translateX(-50%) scale(1.06); } }
 
 /* ---------- Метки команд над танками ---------- */
@@ -521,6 +535,14 @@ html, body {
   background: #2980b9;
   border-color: #2980b9;
   color: #fff;
+}
+
+.qualityLabel {
+  align-self: center;
+  font-size: 12px;
+  color: #aaa;
+  margin-right: 2px;
+  white-space: nowrap;
 }
 
 .settingsRow {
@@ -844,6 +866,65 @@ html, body {
 
 #captureToast.show { animation: capturePop 2.6s ease-out forwards; }
 
+#nightHint {
+  position: fixed;
+  left: 50%;
+  bottom: 110px;
+  transform: translateX(-50%);
+  z-index: 24;
+  padding: 10px 20px;
+  border-radius: 10px;
+  border: 1px solid rgba(120, 160, 220, 0.25);
+  background: rgba(10, 15, 30, 0.75);
+  color: #cfe4ff;
+  font: 15px/1.4 'Segoe UI', Arial, sans-serif;
+  letter-spacing: 0.3px;
+  text-align: center;
+  user-select: none;
+  pointer-events: none;
+  animation: nightHintPulse 1.6s ease-in-out infinite;
+}
+#nightHint b { color: #ffe9a8; }
+@keyframes nightHintPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+#spectateHint {
+  position: fixed;
+  left: 50%;
+  bottom: 110px;
+  transform: translateX(-50%);
+  z-index: 24;
+  padding: 8px 16px;
+  border-radius: 9px;
+  border: 1px solid rgba(150, 190, 250, 0.3);
+  background: rgba(12, 18, 34, 0.7);
+  color: #cfe4ff;
+  font: 13px/1.5 'Segoe UI', Arial, sans-serif;
+  text-align: center;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+}
+#spectateHint:empty { display: none; }
+
+#spectateBtn {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 0;
+  font-size: 14px;
+  font-weight: bold;
+  border: 1px solid #5a78c8;
+  border-radius: 8px;
+  background: rgba(40, 60, 120, 0.35);
+  color: #a8c8ff;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+#spectateBtn:hover { background: rgba(60, 90, 170, 0.45); }
+
 @keyframes capturePop {
   0% { opacity: 0; transform: translateX(-50%) scale(0.5); }
   12% { opacity: 1; transform: translateX(-50%) scale(1.15); }
@@ -1151,6 +1232,44 @@ body.touch #minimap { bottom: 300px; } /* выше кнопок тача */
 @media (pointer: coarse) {
   #touchControls { display: block; }
   #controlsHint { display: none; }
+}
+
+/* ---------- Адаптация под телефоны ---------- */
+html, body { touch-action: none; overscroll-behavior: none; }
+#chatLog, #settingsPanel, #nicknameBox, #rouletteBox, #leaderboard, #deathBox { touch-action: pan-y; }
+
+.modelStats {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  color: #9aa;
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  #nicknameBox { max-height: 94vh; overflow-y: auto; }
+  #joyBase { width: 104px; height: 104px; left: 14px; bottom: max(16px, env(safe-area-inset-bottom)); }
+  #joyKnob { width: 46px; height: 46px; margin: -23px 0 0 -23px; }
+  #touchBtns { right: 12px; bottom: max(16px, env(safe-area-inset-bottom)); gap: 12px; }
+  #fireBtn, #zoomBtn { width: 74px; height: 74px; font-size: 27px; }
+  #zoomBtn { width: 60px; height: 60px; font-size: 22px; }
+  #artyBtn { width: 60px; height: 60px; font-size: 22px; }
+  body.touch #minimap { right: 12px; width: 150px; height: 150px; bottom: 340px; }
+  body.touch #nightHint, body.touch #spectateHint { bottom: 340px; }
+  #hpBarWrap, #reloadBarWrap { left: 10px; }
+  #teamScore { font-size: 11px; }
+  #myModel { left: 10px; }
+}
+
+@media (max-width: 480px) {
+  #joyBase { width: 92px; height: 92px; bottom: max(12px, env(safe-area-inset-bottom)); }
+  #joyKnob { width: 42px; height: 42px; margin: -21px 0 0 -21px; }
+  #fireBtn, #zoomBtn { width: 66px; height: 66px; font-size: 24px; }
+  #zoomBtn { width: 54px; height: 54px; font-size: 20px; }
+  #artyBtn { width: 54px; height: 54px; font-size: 20px; }
+  #touchBtns { gap: 10px; }
+  body.touch #minimap { width: 130px; height: 130px; bottom: 310px; }
 }
 
 /* ---------- Выбор модели танка ---------- */

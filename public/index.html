@@ -5,7 +5,7 @@
   <link rel="icon" href="data:,"> <!-- отключает запрос favicon.ico (404 в консоли) -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Танчики 3D Online</title>
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
 
@@ -32,7 +32,7 @@
       <div id="artilleryFill"></div>
       <span id="artilleryText">АРТИЛЛЕРИЯ · X</span>
     </div>
-    <div id="controlsHint">W/S — вперёд/назад · A/D — поворот · Мышь — прицел башней · ЛКМ — огонь · ПКМ (зажать) — прицел от 1 лица · Q/E — камера · Колесо — зум · 1/2 — тип снаряда · T — чат</div>
+    <div id="controlsHint">W/S — вперёд/назад · A/D — поворот · Мышь — прицел башней · ЛКМ — огонь · ПКМ (зажать) — прицел от 1 лица · Q/E — камера · Колесо — зум · 1/2 — тип снаряда · T — чат · F — фары</div>
     <div id="activeEffects"></div>
     <div id="ammoPanel">
       <button id="ammoAp" class="ammoBtn active">1 · Бронебойный</button>
@@ -63,6 +63,8 @@
     <div id="captureLabel">Центр</div>
   </div>
   <div id="captureToast" class="hidden"></div>
+  <div id="nightHint" class="hidden">🌙 Ночь — включите фары: <b>F</b></div>
+  <div id="spectateHint" class="hidden"></div>
 
   <!-- Баннер победы команды -->
   <div id="matchBanner" class="hidden"></div>
@@ -91,7 +93,15 @@
       <button data-quality="medium">Средняя</button>
       <button data-quality="high">Высокая</button>
     </div>
-    <label class="settingsRow"><input type="checkbox" id="shadowsToggle"> Тени</label>
+    <label class="settingsRow"><input type="checkbox" id="shadowsToggle"> Динамические тени</label>
+    <div class="qualityGroup">
+      <span class="qualityLabel">Разрешение теней</span>
+      <button data-shadowq="low">Низкое</button>
+      <button data-shadowq="medium">Среднее</button>
+      <button data-shadowq="high">Высокое</button>
+      <button data-shadowq="ultra">Ультра</button>
+    </div>
+    <label class="settingsRow"><input type="checkbox" id="cloudsToggle"> Динамические облака</label>
     <label class="settingsRow"><input type="checkbox" id="effectsToggle"> Эффекты</label>
     <div class="settingsRow"><span>Обзор</span><input type="range" id="fovSlider" min="60" max="90" step="1"></div>
     <div class="settingsRow"><span>Звук</span><input type="range" id="volumeSlider" min="0" max="100" step="5"></div>
@@ -156,6 +166,7 @@
           <option value="expert">🔴 Эксперт</option>
         </select>
       </label>
+      <button id="spectateBtn" type="button">👁 Войти наблюдателем</button>
       <button id="startBtn">В БОЙ!</button>
       <button id="menuSettingsBtn" type="button">⚙️ Настройки</button>
     </div>
@@ -202,6 +213,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="vendor/GLTFLoader.js"></script>
   <script src="vendor/RoomEnvironment.js"></script>
-  <script src="game.js?v=24"></script>
+  <script src="game.js?v=27"></script>
 </body>
 </html>
