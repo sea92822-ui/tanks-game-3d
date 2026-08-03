@@ -69,6 +69,10 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75)); // ограничиваем нагрузку на retina-экранах
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// Фотореалистичный свет: ACES-тонмаппинг (мягкие блики/тени) + sRGB-гамма (сочные цвета)
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.12;
+renderer.outputEncoding = THREE.sRGBEncoding;
 sceneContainer.appendChild(renderer.domElement);
 
 window.addEventListener('resize', () => {
@@ -91,13 +95,13 @@ sunLight.position.set(300, 500, 200);
 sunLight.castShadow = true;
 sunLight.shadow.bias = -0.0008;
 sunLight.shadow.normalBias = 1.5; // чистая самотень без артефактов
-sunLight.shadow.radius = 6; // мягкие края теней
+sunLight.shadow.radius = 3; // мягкие края теней (меньше выборок PCF — быстрее)
 sunLight.shadow.camera.near = 50;
 sunLight.shadow.camera.far = 1500;
-sunLight.shadow.camera.left = -800;
-sunLight.shadow.camera.right = 800;
-sunLight.shadow.camera.top = 800;
-sunLight.shadow.camera.bottom = -800;
+sunLight.shadow.camera.left = -450;   // компактный фрустум вокруг игрока —
+sunLight.shadow.camera.right = 450;   // те же тени в разы чётче и быстрее
+sunLight.shadow.camera.top = 450;
+sunLight.shadow.camera.bottom = -450;
 sunLight.shadow.mapSize.set(2048, 2048);
 scene.add(sunLight);
 scene.add(sunLight.target); // тени следуют за игроком
@@ -302,10 +306,11 @@ function applyGraphicsSettings() {
   shadowsDesired = shadows;
   renderer.shadowMap.enabled = shadows;
   sunLight.castShadow = shadows && isSunUp;
-  // Разрешение теней: низкое/среднее/высокое/ультра; ультра — самые чёткие (PCF + 8192)
-  const SHADOW_MAP_SIZE = { low: 1024, medium: 2048, high: 4096, ultra: 8192 };
+  // Разрешение теней: низкое/среднее/высокое/ультра; ультра — самые чёткие (PCF + 4096).
+  // Компактный фрустум (±450) даёт остроту как у прежних 8192, но в разы быстрее.
+  const SHADOW_MAP_SIZE = { low: 1024, medium: 2048, high: 2048, ultra: 4096 };
   const sq = settingsState.shadowQuality;
-  sunLight.shadow.mapSize.set(SHADOW_MAP_SIZE[sq] || 4096, SHADOW_MAP_SIZE[sq] || 4096);
+  sunLight.shadow.mapSize.set(SHADOW_MAP_SIZE[sq] || 2048, SHADOW_MAP_SIZE[sq] || 2048);
   if (sq === 'ultra') {
     renderer.shadowMap.type = THREE.PCFShadowMap;
     sunLight.shadow.radius = 2;
@@ -1395,6 +1400,13 @@ function connectToServer(nickname, color) {
     buildGround();
     buildCaptureZone();
     buildObstacles();
+    // Прогрев: рендерим один кадр сразу, пока игрок в меню —
+    // шейдеры теней компилируются заранее, в бою тени появляются мгновенно
+    try {
+      sunLight.position.set(world.width / 2, 1500, world.depth / 2);
+      sunLight.target.position.set(world.width / 2, 0, world.depth / 2);
+      renderer.render(scene, camera);
+    } catch (e) { /* ignore */ }
   });
 
   // Смена размера боя: сервер пересобрал карту — перестраиваем мир на месте
