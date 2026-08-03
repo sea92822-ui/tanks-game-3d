@@ -164,13 +164,13 @@ scene.fog = new THREE.Fog(0xf2c9a0, 2500, 6200);
 // ---------------------------------------------------------------------------
 const DAY_CYCLE_SECONDS = 600; // 10 минут на полный круг
 const TIME_KEYFRAMES = [
-  { t: 0.00, name: '🌙 Ночь',    top: 0x060c1e, mid: 0x0e1830, bot: 0x16233f, fog: 0x0a1424, ambC: 0x1c2a4e, ambI: 0.13, hemiC: 0x2e4266, hemiG: 0x0a1522, hemiI: 0.06, sunC: 0xaabfdb, sunI: 0.05, sunEl: -0.55, stars: 1.0 },
+  { t: 0.00, name: '🌙 Ночь',    top: 0x02040a, mid: 0x050a16, bot: 0x0a1220, fog: 0x03060d, ambC: 0x0a1326, ambI: 0.04, hemiC: 0x121a2c, hemiG: 0x04080f, hemiI: 0.02, sunC: 0x8fa3c8, sunI: 0.02, sunEl: -0.55, stars: 1.0 },
   { t: 0.20, name: '🌄 Утро',    top: 0x2e5da8, mid: 0xa8c8ef, bot: 0xffc9a0, fog: 0xf2c6a2, ambC: 0xfff0d8, ambI: 0.50, hemiC: 0xffd9b0, hemiG: 0x4a7a4a, hemiI: 0.42, sunC: 0xffd9a0, sunI: 0.95, sunEl: 0.30, stars: 0.0 },
   { t: 0.40, name: '🌞 День',    top: 0x1e4fa0, mid: 0x8fb8e8, bot: 0xf5b87e, fog: 0xf2c9a0, ambC: 0xcfe4ff, ambI: 0.32, hemiC: 0xffd9b0, hemiG: 0x2f5a2f, hemiI: 0.45, sunC: 0xffb070, sunI: 1.30, sunEl: 0.85, stars: 0.0 },
   { t: 0.60, name: '🌇 Вечер',   top: 0x2b4f8f, mid: 0xa79fc8, bot: 0xffa36a, fog: 0xefbe9e, ambC: 0xf4dcff, ambI: 0.42, hemiC: 0xffc9a0, hemiG: 0x3f5a3f, hemiI: 0.40, sunC: 0xffa050, sunI: 1.05, sunEl: 0.42, stars: 0.0 },
   { t: 0.75, name: '🌇 Закат',   top: 0x3a2a5e, mid: 0xd06a3c, bot: 0xff9a44, fog: 0xe88f5a, ambC: 0xffc8a0, ambI: 0.52, hemiC: 0xff9a5a, hemiG: 0x3a2a2a, hemiI: 0.50, sunC: 0xff7a2a, sunI: 1.20, sunEl: 0.10, stars: 0.05 },
   { t: 0.90, name: '🌆 Сумерки', top: 0x101530, mid: 0x2c3a5e, bot: 0x5a4a6e, fog: 0x2c3350, ambC: 0x303e58, ambI: 0.32, hemiC: 0x4a5a8a, hemiG: 0x16202e, hemiI: 0.15, sunC: 0x8090c0, sunI: 0.12, sunEl: -0.12, stars: 0.7 },
-  { t: 1.00, name: '🌙 Ночь',    top: 0x060c1e, mid: 0x0e1830, bot: 0x16233f, fog: 0x0a1424, ambC: 0x1c2a4e, ambI: 0.13, hemiC: 0x2e4266, hemiG: 0x0a1522, hemiI: 0.06, sunC: 0xaabfdb, sunI: 0.05, sunEl: -0.55, stars: 1.0 },
+  { t: 1.00, name: '🌙 Ночь',    top: 0x02040a, mid: 0x050a16, bot: 0x0a1220, fog: 0x03060d, ambC: 0x0a1326, ambI: 0.04, hemiC: 0x121a2c, hemiG: 0x04080f, hemiI: 0.02, sunC: 0x8fa3c8, sunI: 0.02, sunEl: -0.55, stars: 1.0 },
 ];
 
 // Звёзды: видны ночью и в сумерках, гаснут днём
