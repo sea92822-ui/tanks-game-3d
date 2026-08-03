@@ -283,7 +283,7 @@ function setupEnvironment() {
 // ---------------------------------------------------------------------------
 // НАСТРОЙКИ ГРАФИКИ
 // ---------------------------------------------------------------------------
-const settingsState = { quality: 'high', shadows: true, clouds: true, shadowQuality: 'high', effects: true, fov: 65, volume: 0.7 };
+const settingsState = { quality: 'high', shadows: true, clouds: true, shadowQuality: 'high', effects: true, fov: 65, volume: 0.7, soundShot: true, soundDrive: true, soundEngine: true };
 try {
   Object.assign(settingsState, JSON.parse(localStorage.getItem('tanksGraphics') || '{}'));
 } catch (e) { /* ignore */ }
@@ -337,6 +337,9 @@ function initSettingsUI() {
   const effectsToggle = document.getElementById('effectsToggle');
   const fovSlider = document.getElementById('fovSlider');
   const volumeSlider = document.getElementById('volumeSlider');
+  const soundShotToggle = document.getElementById('soundShotToggle');
+  const soundDriveToggle = document.getElementById('soundDriveToggle');
+  const soundEngineToggle = document.getElementById('soundEngineToggle');
 
   settingsBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -397,6 +400,31 @@ function initSettingsUI() {
     engineIdleSound.volume = settingsState.volume * 0.25;
     engineMoveSound.volume = settingsState.volume * 0.5;
   });
+  soundShotToggle.addEventListener('change', () => {
+    settingsState.soundShot = soundShotToggle.checked;
+    saveGraphicsSettings();
+  });
+  soundDriveToggle.addEventListener('change', () => {
+    settingsState.soundDrive = soundDriveToggle.checked;
+    saveGraphicsSettings();
+    if (!settingsState.soundDrive) {
+      engineMoving = false;
+      try { engineMoveSound.pause(); } catch (e) { /* ignore */ }
+    }
+  });
+  soundEngineToggle.addEventListener('change', () => {
+    settingsState.soundEngine = soundEngineToggle.checked;
+    saveGraphicsSettings();
+    if (settingsState.soundEngine) {
+      initAudioCtx();
+      try {
+        const p = engineIdleSound.play();
+        if (p) p.catch(() => {});
+      } catch (e) { /* ignore */ }
+    } else {
+      try { engineIdleSound.pause(); } catch (e) { /* ignore */ }
+    }
+  });
 
   function updateSettingsUI() {
     document.querySelectorAll('[data-quality]').forEach(b => b.classList.toggle('active', b.dataset.quality === settingsState.quality));
@@ -406,6 +434,9 @@ function initSettingsUI() {
     effectsToggle.checked = settingsState.effects;
     fovSlider.value = settingsState.fov;
     volumeSlider.value = Math.round(settingsState.volume * 100);
+    soundShotToggle.checked = settingsState.soundShot !== false;
+    soundDriveToggle.checked = settingsState.soundDrive !== false;
+    soundEngineToggle.checked = settingsState.soundEngine !== false;
   }
   window.updateSettingsUI = updateSettingsUI;
   updateSettingsUI();
@@ -3819,7 +3850,8 @@ function playDeathSound() {
 function unlockAudio() {
   // Прогреваем ВСЕ звуки по жесту пользователя — иначе браузер блокирует их
   initAudioCtx();
-  [shotSound, explosionSound, penetrationSound, engineIdleSound, engineMoveSound].forEach(s => {
+  const list = settingsState.soundEngine === false ? [shotSound, explosionSound, penetrationSound, engineMoveSound] : [shotSound, explosionSound, penetrationSound, engineIdleSound, engineMoveSound];
+  list.forEach(s => {
     try {
       s.currentTime = 0;
       const p = s.play();
@@ -3831,6 +3863,7 @@ function unlockAudio() {
 }
 
 function playShotSound() {
+  if (settingsState.soundShot === false) return;
   try {
     shotSound.currentTime = 0;
     const p = shotSound.play();
@@ -3842,6 +3875,7 @@ let engineMoving = false;
 function updateEngineSound() {
   if (!selfId) return;
   const moving = keys.forward || keys.back;
+  if (moving && settingsState.soundDrive === false) moving = false;
   if (moving && !engineMoving) {
     engineMoving = true;
     const p = engineMoveSound.play();
