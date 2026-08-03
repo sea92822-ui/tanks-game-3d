@@ -31,6 +31,7 @@ scene.background = new THREE.Color(0x8fb8e8);
 // ОБЛАКА НА НЕБЕ (медленно плывут, зациклены)
 // ---------------------------------------------------------------------------
 const clouds = [];
+const tankMeshes = new Map();   // id -> THREE.Group
 
 function createClouds() {
   const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false });
@@ -1149,7 +1150,6 @@ let currentState = { players: [], bullets: [] };
 const RENDER_DELAY = 100; // мс — рендерим мир с фиксированной задержкой (буфер интерполяции)
 const stateBuffer = [];    // { time, state } — последние состояния от сервера
 
-const tankMeshes = new Map();   // id -> THREE.Group
 const tankPrevY = new Map();    // id -> последняя высота (для пыли при приземлении)
 const bulletMeshes = new Map(); // id -> THREE.Mesh
 
